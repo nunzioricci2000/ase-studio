@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 from __future__ import annotations
 
+import argparse
 import gc
 import os
 import sys
@@ -20,10 +21,10 @@ ROOT = Path(os.environ.get("ASE_STUDIO_HOST_ROOT", STUDIO_ROOT.parent)).resolve(
 APPLICATION_ID = "it.polito.ASEStudio"
 WM_CLASS = "ASEStudio"
 ICON_PATH = STUDIO_ROOT / "frontend" / "icon.png"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+if str(STUDIO_ROOT) not in sys.path:
+    sys.path.insert(0, str(STUDIO_ROOT))
 
-from ase_studio.backend import Handler, require_startup_repositories  # noqa: E402
+from backend import Handler, require_startup_repositories  # noqa: E402
 from http.server import ThreadingHTTPServer  # noqa: E402
 
 
@@ -35,12 +36,18 @@ def create_server(preferred_port: int) -> ThreadingHTTPServer:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="ASE Studio native window")
+    parser.add_argument("port", nargs="?", type=int, default=8765)
+    parser.add_argument("--development", action="store_true",
+                        help="Use this checkout without switching repository branches")
+    args = parser.parse_args()
     GLib.set_prgname(WM_CLASS)
     GLib.set_application_name("ASE Studio")
     if ICON_PATH.exists():
         Gtk.Window.set_default_icon_from_file(str(ICON_PATH))
     try:
-        require_startup_repositories()
+        if not args.development:
+            require_startup_repositories()
     except ValueError as error:
         message, _status = error.args[0]
         print(message, file=sys.stderr)
@@ -55,7 +62,7 @@ def main() -> int:
         dialog.run()
         dialog.destroy()
         return 1
-    preferred_port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
+    preferred_port = args.port
 
     application = Gtk.Application(application_id=APPLICATION_ID)
     server = None

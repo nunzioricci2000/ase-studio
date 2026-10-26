@@ -68,6 +68,61 @@ The installer adds ASE Studio to the current user's application menu. When a
 desktop directory is available, it also creates a trusted `ASE Studio.desktop`
 shortcut there.
 
+## Assembly editor
+
+The embedded Monaco editor provides multiple cursors, find/replace, undo/redo,
+indentation, bracket matching, folding, RISC-V instruction/register completion,
+and instruction hover help. Entry/exit scaffold instructions remain protected;
+an edit touching a protected line is rejected as a whole. Instruction help
+identifies ISA extensions and pseudoinstructions, but does not guarantee support
+by the selected CPU configuration. The instruction reference is the
+[RISC-V ISA specification](https://docs.riscv.org/reference/isa/unpriv/rv32.html).
+
+The editor and its worker are served locally and work offline. No VS Code
+extension host, language server, label navigation, or inline assembler diagnostics
+are included. Pipeline selection highlights the corresponding source line.
+
+### Developing the editor
+
+End users do not need Node.js. Maintainers rebuild the checked-in assets with:
+
+```bash
+npm ci
+npm run build
+npm test
+npx playwright install chromium
+npm run test:browser
+```
+
+Use `CHROMIUM_PATH=/usr/bin/chromium npm run test:browser` to test with an
+installed Chromium. Keep `frontend/vendor/` and the lockfile with source changes.
+Monaco is pinned; upgrades must pass the edit-protection browser tests because
+the adapter guards the model's edit entry points before its undo stack changes.
+The build uses the pinned DOMPurify override in place of Monaco's bundled copy,
+and includes Monaco, DOMPurify, and third-party license notices alongside assets.
+
+To preview a separate Studio worktree against an existing simulator checkout:
+
+```bash
+ASE_STUDIO_HOST_ROOT=/path/to/ase_riscv_gem5_sim ./launch.sh --development
+```
+
+`--development` explicitly skips automatic repository branch switching and loads
+the backend from this Studio checkout. It still uses the specified host's projects
+and toolchain; normal launches retain deployment-branch checks. Set
+`ASE_STUDIO_PORT` to choose another port.
+
+Additional native and integration checks:
+
+- Start `ASE_TEST_SERVE_ONLY=1 npm run test:browser`, then run
+  `python3 tests/webkit.py URL` with the printed harness URL to verify WebKitGTK.
+- Set `ASE_TEST_HOST_ROOT` to a simulator checkout and run
+  `python3 tests/studio-server.py`. It prints a URL and disposable project root.
+  Pass both to `node tests/studio-browser.mjs URL SCRATCH_ROOT` to verify the
+  application, saving, external reload, preferences, and pipeline navigation.
+- `ASE_TEST_HOST_ROOT=/path/to/ase_riscv_gem5_sim python3 tests/studio-server.py --simulate`
+  builds and simulates temporary arithmetic and branch-loop programs.
+
 ## License and educational use
 
 This project is intended for education and research. The repository is

@@ -8,4 +8,4 @@ host_root="${ASE_STUDIO_HOST_ROOT:-$(cd "$studio_dir/.." && pwd)}"
 port="${ASE_STUDIO_PORT:-8765}"
 
 cd "$host_root"
-exec python3 "$studio_dir/native.py" "$port"
+exec python3 "$studio_dir/native.py" "$port" "$@"

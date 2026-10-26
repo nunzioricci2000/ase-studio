@@ -1,0 +1,20 @@
+{
+  "name": "ase-studio-editor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-editor.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "dependencies": {
+    "monaco-editor": "0.57.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.64.1"
+  },
+  "overrides": {
+    "dompurify": "3.4.17"
+  }
+}

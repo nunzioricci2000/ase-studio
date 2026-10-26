@@ -49,9 +49,9 @@ header {
 .brand .logo-dark { display: none; }
 .header-tools { min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 14px; }
 .project-actions, .run-actions { display: flex; align-items: center; gap: 7px; }
-#project-title { color: var(--muted); }
+#project-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 
-button {
+button:where(:not(.monaco-editor button)) {
   border: 1px solid #b8c5d6;
   background: #fff;
   padding: 7px 11px;
@@ -59,7 +59,7 @@ button {
   cursor: pointer;
 }
 
-button:disabled { opacity: .45; cursor: default; }
+button:disabled:where(:not(.monaco-editor button)) { opacity: .45; cursor: default; }
 .primary { color: #fff; background: var(--blue); border-color: var(--blue); }
 .danger { color: #b42318; border-color: #f1b5af; }
 .submit { color: #fff; border-color: #15803d; background: #16a34a; font-weight: 600; }
@@ -87,25 +87,25 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: v
 .project { display: block; border: 0; background: transparent; width: 100%; text-align: left; padding: 8px; }
 .project.selected { background: #e8f1ff; color: #0759b3; font-weight: 600; outline: 2px solid var(--blue); }
 
-#work { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+#work { container-type: inline-size; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
 #editor-toolbar { flex: 0 0 40px; border-bottom: 1px solid var(--line); padding: 5px 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); }
-.editor-identity { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.editor-identity { flex: 1; overflow: hidden; min-width: 0; display: flex; align-items: center; gap: 9px; }
 #open-with, #rename, #save { flex: none; padding: 4px 9px; }
 #source-name { min-width: 0; padding-left: 9px; border-left: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-tools { flex: none; display: flex; align-items: center; gap: 10px; }
 .editor-font-control { display: flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; }
 #editor-font-size { width: 85px; }
 #editor-font-value { min-width: 34px; font-variant-numeric: tabular-nums; }
-#search { width: 190px; border: 1px solid var(--line); border-radius: 4px; padding: 5px; }
-.editor-area { min-height: 0; overflow: auto; overflow-anchor: none; font: var(--editor-font-size)/var(--editor-line-height) "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-ligatures: none; scroll-behavior: smooth; }
-.editor-wrap { position: relative; min-height: 300px; background: #fff; }
-.editor-wrap textarea, .editor-wrap pre { margin: 0; border: 0; padding: 10px 14px 10px 55px; width: 100%; min-height: 100%; font: inherit; line-height: var(--editor-line-height); letter-spacing: 0; word-spacing: 0; tab-size: 4; white-space: pre-wrap; overflow-wrap: normal; overflow: hidden; }
-.editor-wrap textarea { position: relative; resize: none; color: transparent; -webkit-text-fill-color: transparent; background: transparent; caret-color: #172235; z-index: 2; outline: 0; }
-.editor-wrap pre { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-.editor-wrap pre::before { content: attr(data-lines); position: absolute; left: 0; top: 10px; width: 43px; text-align: right; color: #94a3b8; border-right: 1px solid var(--line); padding-right: 8px; white-space: pre; }
-.source-line { display: block; min-height: var(--editor-line-height); margin-right: -14px; padding-right: 14px; }
-.source-line.pipeline-selected { background: #fff3bf; box-shadow: inset 3px 0 #f59f00; }
-.source-line.protected { background: #eef2f7; color: #53657b; box-shadow: inset 3px 0 #94a3b8; }
+.editor-area { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#source-editor { position: absolute; inset: 0; }
+#editor-status { position: absolute; bottom: 4px; left: 60px; right: 20px; z-index: 20; background: var(--bg); color: var(--ink); font-size: 12px; padding: 5px 8px; pointer-events: none; }
+#editor-status:empty { display: none; }
+.ase-protected-line { background: #eef2f7; }
+.ase-protected-glyph { border-left: 3px solid #94a3b8; margin-left: 4px; }
+.ase-pipeline-line { background: #fff3bf; }
+.ase-pipeline-glyph { border-left: 3px solid #f59f00; }
+/* Keep application-wide form/button rules out of Monaco's controls. */
+.monaco-editor textarea { color: inherit; }
 .comment { color: #8796a8; }
 .directive { color: #8b3bb3; }
 .register { color: #b54b00; }
@@ -371,7 +371,6 @@ dialog::backdrop { background: #0f172a73; }
   header { padding: 0 8px; }
   header span { display: none; }
   .editor-font-control { display: none; }
-  #search { width: 125px; }
   .units-grid, .memory-grid, .o3-grid { grid-template-columns: 1fr; }
   .submission-projects { grid-template-columns: 1fr; }
   .submission-project-tools { align-items: flex-start; flex-direction: column; }
@@ -395,12 +394,10 @@ html[data-theme="dark"] header,
 html[data-theme="dark"] aside,
 html[data-theme="dark"] #work,
 html[data-theme="dark"] #bottom,
-html[data-theme="dark"] .editor-wrap,
 html[data-theme="dark"] dialog,
 html[data-theme="dark"] #cpu-form,
 html[data-theme="dark"] #submission-form { background: #111827; color: var(--ink); }
-html[data-theme="dark"] button,
-html[data-theme="dark"] #search,
+html[data-theme="dark"] button:where(:not(.monaco-editor button)),
 html[data-theme="dark"] #integer-register-format,
 html[data-theme="dark"] #float-register-format,
 html[data-theme="dark"] #cpu-form select,
@@ -421,9 +418,6 @@ html[data-theme="dark"] .reset { color: #fed7aa; border-color: #9a3412; backgrou
 html[data-theme="dark"] .step { color: #bae6fd; border-color: #075985; background: #12344a; }
 html[data-theme="dark"] .primary { color: #07111f; background: #60a5fa; border-color: #60a5fa; }
 html[data-theme="dark"] .project.selected { background: #17365f; color: #bfdbfe; }
-html[data-theme="dark"] .editor-wrap textarea { caret-color: #f8fafc; }
-html[data-theme="dark"] .source-line.protected { background: #202b3a; color: #aebdd0; box-shadow: inset 3px 0 #64748b; }
-html[data-theme="dark"] .source-line.pipeline-selected,
 html[data-theme="dark"] .pipeline-row.row-selected .inst,
 html[data-theme="dark"] .pipeline-row.row-selected .address-cell,
 html[data-theme="dark"] .pipeline-row.row-selected .flow-cell { background: #493b16; }
@@ -490,3 +484,11 @@ html[data-theme="dark"] .brand button,
 html[data-theme="dark"] .about-content #close-about { background: transparent; }
 html[data-theme="dark"] .about-content .logo-light { display: none; }
 html[data-theme="dark"] .about-content .logo-dark { display: block; }
+
+@container (max-width: 650px) {
+  .editor-font-control, #source-name { display: none; }
+}
+
+html[data-theme="dark"] .ase-protected-line { background: #202b3a; }
+html[data-theme="dark"] .ase-protected-glyph { border-color: #64748b; }
+html[data-theme="dark"] .ase-pipeline-line { background: #493b16; }

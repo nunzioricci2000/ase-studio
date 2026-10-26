@@ -1,3 +1,4 @@
+import {createSourceEditor} from './vendor/editor.js';
 /*
  * SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
  * SPDX-License-Identifier: GPL-2.0-only
@@ -9,19 +10,12 @@ let pipelineData = null;
 let selectedRow = null;
 let selectedColumn = null;
 let selectedSourceLine = null;
-let searchSourceLine = null;
-let searchMatchIndex = -1;
 let playbackCycle = null;
 let stepMode = false;
 let lastNormalLog = "";
 let lastAdvancedLog = lastNormalLog;
 let savedSource = "";
 let sourceDirty = false;
-let undoStack = [];
-let redoStack = [];
-let pendingEditorSnapshot = null;
-let pendingEditorViewport = null;
-let applyingEditorHistory = false;
 let messageDialogResolver = null;
 let messageDialogHasInput = false;
 let messageDialogConfirmValue = true;
@@ -69,63 +63,10 @@ function showActionMessage(title, message) {
   return actionDialog({title, message});
 }
 
-function editorSnapshot() {
-  const editor = $("#body");
-  return {text: editor.value, start: editor.selectionStart, end: editor.selectionEnd};
-}
-
-function editorViewport() {
-  const area = document.querySelector(".editor-area");
-  return area ? {top: area.scrollTop, left: area.scrollLeft} : null;
-}
-
-function restoreEditorViewport(viewport) {
-  if (!viewport) return;
-  const restore = () => {
-    const area = document.querySelector(".editor-area");
-    if (!area) return;
-    area.scrollTop = viewport.top;
-    area.scrollLeft = viewport.left;
-  };
-  restore();
-  requestAnimationFrame(() => {
-    restore();
-    requestAnimationFrame(restore);
-  });
-  setTimeout(restore, 0);
-}
-
-function resetEditorHistory() {
-  undoStack = [];
-  redoStack = [];
-  pendingEditorSnapshot = null;
-  pendingEditorViewport = null;
-}
-
-function restoreEditorSnapshot(snapshot) {
-  if (!snapshot) return;
-  const editor = $("#body");
-  const viewport = editorViewport();
-  applyingEditorHistory = true;
-  editor.value = snapshot.text;
-  editor.setSelectionRange(snapshot.start, snapshot.end);
-  applyingEditorHistory = false;
-  markSourceEdited();
-  syncEditor();
-  restoreEditorViewport(viewport);
-}
-
-function undoEditor() {
-  if (!current || !undoStack.length) return;
-  redoStack.push(editorSnapshot());
-  restoreEditorSnapshot(undoStack.pop());
-}
-
-function redoEditor() {
-  if (!current || !redoStack.length) return;
-  undoStack.push(editorSnapshot());
-  restoreEditorSnapshot(redoStack.pop());
-}
+const sourceEditor = createSourceEditor($("#source-editor"), {
+  onChange: markSourceEdited,
+  onSave: () => save().catch(error => showActionMessage("Save", error.message)),
+});
 
 const savedTheme = localStorage.getItem("ase-studio-theme");
 document.documentElement.dataset.theme = savedTheme
@@ -133,6 +74,7 @@ document.documentElement.dataset.theme = savedTheme
 
 function updateThemeButton() {
   const dark = document.documentElement.dataset.theme === "dark";
+  sourceEditor.setTheme(dark);
   $("#theme-toggle").textContent = dark ? "Light mode" : "Dark mode";
   $("#theme-toggle").title = dark ? "Use the light color theme" : "Use the dark color theme";
 }
@@ -145,7 +87,7 @@ function setEditorFontSize(value) {
   $("#editor-font-size").value = size;
   $("#editor-font-value").textContent = `${size} px`;
   localStorage.setItem("ase-studio-editor-font-size", String(size));
-  if (current) syncEditor();
+  sourceEditor.setFontSize(size);
 }
 
 async function api(url, options = {}) {
@@ -199,7 +141,7 @@ function updateDirtyIndicator() {
 }
 
 function markSourceEdited() {
-  sourceDirty = Boolean(current) && $("#body").value !== savedSource;
+  sourceDirty = Boolean(current) && sourceEditor.getValue() !== savedSource;
   updateDirtyIndicator();
 }
 
@@ -219,115 +161,15 @@ function highlightAsmLine(line) {
   return code + (comment ? `<span class="comment">${escapeHtml(comment)}</span>` : "");
 }
 
-function computeProtectedLines(text) {
-  const lines = text.split("\n");
-  const locked = new Set();
-  const code = lines.map(line => line.split("#", 1)[0].trim());
-  const scaffoldComments = new Set([
-    "# The text section contains the instructions that the CPU runs.",
-    "# Make _start visible as the point where the program begins.",
-    "# The End block stops the program and returns control to the simulator."
-  ]);
-  code.forEach((line, index) => {
-    if (/^(?:\.section\s+\.text(?:\b|,)|\.text(?:\b|,))/.test(line)
-        || /^\.glob(?:l|al)\s+_start\b/.test(line)
-        || /^_start:\s*$/.test(line)
-        || scaffoldComments.has(lines[index].trim())) locked.add(index);
-  });
-  const significant = code.map((line, index) => ({line, index})).filter(item => item.line);
-  for (let position = significant.length - 1; position >= 2; position--) {
-    if (significant[position].line !== "ecall") continue;
-    const a7 = significant[position - 1].line;
-    const a0 = significant[position - 2].line;
-    if (/^li\s+(?:a7|x17)\s*,\s*93$/.test(a7) && /^li\s+(?:a0|x10)\s*,\s*0$/.test(a0)) {
-      locked.add(significant[position].index);
-      locked.add(significant[position - 1].index);
-      locked.add(significant[position - 2].index);
-      const preceding = significant[position - 3];
-      if (preceding && /^End:\s*$/i.test(preceding.line)) locked.add(preceding.index);
-      break;
-    }
-  }
-  return locked;
-}
-
-function protectedRanges(text) {
-  const ranges = [];
-  const locked = computeProtectedLines(text);
-  let offset = 0;
-  text.split("\n").forEach((line, index) => {
-    const end = offset + line.length;
-    if (locked.has(index)) ranges.push({start: offset, end: end + 1});
-    offset = end + 1;
-  });
-  return ranges;
-}
-
 function syncEditor() {
-  const editorArea = document.querySelector(".editor-area");
-  const savedScrollTop = editorArea?.scrollTop || 0;
-  const savedScrollLeft = editorArea?.scrollLeft || 0;
-  const text = $("#body").value;
-  const lines = text.split("\n");
-  const lockedLines = computeProtectedLines(text);
-  $("#highlight").innerHTML = lines.map((line, index) => {
-    const lineNumber = index + 1;
-    const selected = lineNumber === selectedSourceLine ? " pipeline-selected" : "";
-    const locked = lockedLines.has(index) ? " protected" : "";
-    return `<span class="source-line${selected}${locked}" data-line="${lineNumber}">${highlightAsmLine(line) || "&nbsp;"}</span>`;
-  }).join("");
-  const query = $("#search")?.value.trim();
-  if (query) {
-    document.querySelectorAll("#highlight .source-line").forEach(sourceLine => {
-      const walker = document.createTreeWalker(sourceLine, NodeFilter.SHOW_TEXT);
-      const nodes = [];
-      while (walker.nextNode()) nodes.push(walker.currentNode);
-      nodes.forEach(node => {
-        const lower = node.data.toLowerCase();
-        const needle = query.toLowerCase();
-        let cursor = 0;
-        let match = lower.indexOf(needle);
-        if (match < 0) return;
-        const fragment = document.createDocumentFragment();
-        while (match >= 0) {
-          fragment.append(document.createTextNode(node.data.slice(cursor, match)));
-          const mark = document.createElement("mark");
-          mark.className = "search-hit";
-          mark.textContent = node.data.slice(match, match + query.length);
-          fragment.append(mark);
-          cursor = match + query.length;
-          match = lower.indexOf(needle, cursor);
-        }
-        fragment.append(document.createTextNode(node.data.slice(cursor)));
-        node.replaceWith(fragment);
-      });
-    });
-  }
-  $("#highlight").dataset.lines = lines.map((_, index) => index + 1).join("\n");
-  const lineHeight = parseFloat(getComputedStyle(document.documentElement)
-    .getPropertyValue("--editor-line-height")) || 23;
-  $("#body").style.height = Math.max(300, lines.length * lineHeight + 20) + "px";
-  if (editorArea) {
-    editorArea.scrollTop = savedScrollTop;
-    editorArea.scrollLeft = savedScrollLeft;
-  }
-}
-
-function scrollEditorToLine(lineNumber) {
-  const editorArea = document.querySelector(".editor-area");
-  const sourceLine = document.querySelector(`.source-line[data-line="${lineNumber}"]`);
-  if (!editorArea || !sourceLine) return;
-  const lineHeight = parseFloat(getComputedStyle(document.documentElement)
-    .getPropertyValue("--editor-line-height")) || 23;
-  editorArea.scrollTop = Math.max(0,
-    sourceLine.offsetTop - (editorArea.clientHeight - lineHeight) / 2);
+  sourceEditor.highlightLine(selectedSourceLine);
 }
 
 function highlightSourceLine(lineNumber) {
   selectedSourceLine = lineNumber || null;
   syncEditor();
   if (!selectedSourceLine) return;
-  scrollEditorToLine(selectedSourceLine);
+  sourceEditor.highlightLine(selectedSourceLine, true);
 }
 
 async function loadProjects() {
@@ -384,12 +226,9 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
   pipelineData = null;
   playbackCycle = null;
   stepMode = false;
-  searchSourceLine = null;
-  searchMatchIndex = -1;
   $("#project-title").textContent = current.name;
   $("#source-name").textContent = current.sourceName;
-  $("#body").value = current.text;
-  resetEditorHistory();
+  sourceEditor.replaceDocument(current.text, current.sourceName);
   savedSource = current.text;
   sourceDirty = false;
   updateDirtyIndicator();
@@ -422,14 +261,16 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
 
 async function save() {
   if (!current) return;
+  const projectName = current.name;
+  const submittedSource = sourceEditor.getValue();
   await api("/api/save", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({name: current.name, text: $("#body").value})
+    body: JSON.stringify({name: projectName, text: submittedSource})
   });
-  savedSource = $("#body").value;
-  sourceDirty = false;
-  updateDirtyIndicator();
+  if (current?.name !== projectName) return;
+  savedSource = submittedSource;
+  markSourceEdited();
   lastNormalLog = "Saved " + current.sourceName + ".";
   lastAdvancedLog = lastNormalLog;
   updateLog();
@@ -527,14 +368,10 @@ async function synchronizeExternalSource() {
   try {
     const disk = await api("/api/project?name=" + encodeURIComponent(projectName));
     if (!current || current.name !== projectName || sourceDirty || disk.text === savedSource) return;
-    const editor = $("#body");
-    const start = Math.min(editor.selectionStart, disk.text.length);
-    const end = Math.min(editor.selectionEnd, disk.text.length);
     current = disk;
-    editor.value = disk.text;
-    editor.setSelectionRange(start, end);
+    sourceEditor.replaceDocument(disk.text, disk.sourceName, {preserveView:true});
     savedSource = disk.text;
-    resetEditorHistory();
+    selectedSourceLine = null;
     pipelineData = null;
     playbackCycle = null;
     stepMode = false;
@@ -653,7 +490,7 @@ async function prepareSubmission() {
   }
 
   const submittedProjectName = current.name;
-  const submittedSource = $("#body").value;
+  const submittedSource = sourceEditor.getValue();
   const currentWasSelected = selectedNames.includes(submittedProjectName);
   const projects = selectedNames.map(name => ({
     name,
@@ -684,7 +521,7 @@ async function prepareSubmission() {
     });
     if (currentWasSelected && current?.name === submittedProjectName) {
       savedSource = submittedSource;
-      sourceDirty = $("#body").value !== submittedSource;
+      sourceDirty = sourceEditor.getValue() !== submittedSource;
       updateDirtyIndicator();
     }
     lastNormalLog = result.output;
@@ -789,9 +626,9 @@ async function run(stepAfterRun = false) {
     const result = await api("/api/run", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({name: current.name, text: $("#body").value})
+      body: JSON.stringify({name: current.name, text: sourceEditor.getValue()})
     });
-    savedSource = $("#body").value;
+    savedSource = sourceEditor.getValue();
     sourceDirty = false;
     updateDirtyIndicator();
     lastNormalLog = result.output;
@@ -1657,9 +1494,7 @@ async function deleteCurrentProject() {
     updateDirtyIndicator();
     $("#project-title").textContent = "Open a project";
     $("#source-name").textContent = "Assembly Editor";
-    $("#body").value = "";
-    resetEditorHistory();
-    $("#highlight").innerHTML = "";
+    sourceEditor.replaceDocument("", null);
     renderRegisters();
     renderMemory();
     $("#save").disabled = true;
@@ -1687,114 +1522,7 @@ async function deleteCurrentProject() {
   }
 }
 
-function applyEditorChange(start, end, replacement, selectionStart, selectionEnd, viewport) {
-  const editor = $("#body");
-  undoStack.push(editorSnapshot());
-  if (undoStack.length > 500) undoStack.shift();
-  redoStack = [];
-  pendingEditorSnapshot = null;
-  pendingEditorViewport = null;
-  editor.value = editor.value.slice(0, start) + replacement + editor.value.slice(end);
-  markSourceEdited();
-  syncEditor();
-  editor.setSelectionRange(selectionStart, selectionEnd);
-  restoreEditorViewport(viewport);
-}
-
-function selectedLineRange(text, start, end) {
-  const lineStart = start > 0 ? text.lastIndexOf("\n", start - 1) + 1 : 0;
-  const effectiveEnd = end > start && text[end - 1] === "\n" ? end - 1 : end;
-  const followingNewline = text.indexOf("\n", effectiveEnd);
-  return {start: lineStart, end: followingNewline < 0 ? text.length : followingNewline};
-}
-
-function editTouchesProtected(text, start, end) {
-  return protectedRanges(text).some(range => start < range.end && end >= range.start);
-}
-
-$("#body").addEventListener("beforeinput", event => {
-  if (!current) return;
-  pendingEditorViewport = editorViewport();
-  if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
-    event.preventDefault();
-    if (event.inputType === "historyUndo") undoEditor();
-    else redoEditor();
-    return;
-  }
-  const editor = event.target;
-  let start = editor.selectionStart;
-  let end = editor.selectionEnd;
-  if (start === end && event.inputType.startsWith("delete")) {
-    if (event.inputType.includes("Backward")) start = Math.max(0, start - 1);
-    else end = Math.min(editor.value.length, end + 1);
-  }
-  const touchesProtected = protectedRanges(editor.value).some(range => start < range.end && end >= range.start);
-  if (touchesProtected) {
-    event.preventDefault();
-    pendingEditorSnapshot = null;
-    pendingEditorViewport = null;
-  } else {
-    pendingEditorSnapshot = editorSnapshot();
-  }
-});
-$("#body").addEventListener("input", () => {
-  const viewport = pendingEditorViewport;
-  if (!applyingEditorHistory && pendingEditorSnapshot
-      && pendingEditorSnapshot.text !== $("#body").value) {
-    undoStack.push(pendingEditorSnapshot);
-    if (undoStack.length > 500) undoStack.shift();
-    redoStack = [];
-  }
-  pendingEditorSnapshot = null;
-  pendingEditorViewport = null;
-  markSourceEdited();
-  syncEditor();
-  restoreEditorViewport(viewport);
-});
-$("#body").addEventListener("keydown", event => {
-  if (event.key === "Tab" || event.key === "ISO_Left_Tab" || event.code === "Tab") {
-    event.preventDefault();
-    const editor = event.target;
-    const viewport = editorViewport();
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    if (start === end && !event.shiftKey) {
-      if (editTouchesProtected(editor.value, start, end)) return;
-      applyEditorChange(start, end, "    ", start + 4, start + 4, viewport);
-      return;
-    }
-    const range = selectedLineRange(editor.value, start, end);
-    if (editTouchesProtected(editor.value, range.start, range.end)) return;
-    const block = editor.value.slice(range.start, range.end);
-    if (event.shiftKey) {
-      const lines = block.split("\n");
-      const unindented = lines.map(line => line.startsWith("\t")
-        ? line.slice(1) : line.replace(/^ {1,4}/, "")).join("\n");
-      if (unindented === block) return;
-      applyEditorChange(range.start, range.end, unindented,
-        range.start, range.start + unindented.length, viewport);
-    } else {
-      const indented = block.split("\n").map(line => "    " + line).join("\n");
-      applyEditorChange(range.start, range.end, indented,
-        range.start, range.start + indented.length, viewport);
-    }
-    return;
-  }
-  if (event.key === "Enter" && !event.isComposing) {
-    event.preventDefault();
-    const editor = event.target;
-    const viewport = editorViewport();
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    if (editTouchesProtected(editor.value, start, end)) return;
-    const lineStart = start > 0 ? editor.value.lastIndexOf("\n", start - 1) + 1 : 0;
-    const indentation = (editor.value.slice(lineStart).match(/^[\t ]*/) || [""])[0];
-    const replacement = "\n" + indentation;
-    const caret = start + replacement.length;
-    applyEditorChange(start, end, replacement, caret, caret, viewport);
-  }
-});
-$("#save").onclick = save;
+$("#save").onclick = () => save().catch(error => showActionMessage("Save", error.message));
 $("#duplicate").onclick = duplicateCurrentProject;
 $("#open-with").onclick = openWithChooser;
 $("#rename").onclick = renameCurrentProject;
@@ -2047,16 +1775,7 @@ $("#environment-form").onsubmit = async event => {
     await showActionMessage("Settings", error.message);
   }
 };
-$("#search").oninput = event => {
-  const query = event.target.value.trim().toLowerCase();
-  const source = $("#body").value.toLowerCase();
-  searchMatchIndex = query ? source.indexOf(query) : -1;
-  searchSourceLine = searchMatchIndex >= 0 ? source.slice(0, searchMatchIndex).split("\n").length : null;
-  syncEditor();
-  if (searchSourceLine) {
-    scrollEditorToLine(searchSourceLine);
-  }
-};
+$("#find-source").onclick = () => sourceEditor.find();
 
 async function checkForUpdate() {
   try {
@@ -2133,28 +1852,16 @@ $("#update").onclick = async () => {
 document.addEventListener("keydown", event => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
-  if (key === "z" || event.code === "KeyZ") {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.shiftKey) redoEditor();
-    else undoEditor();
-    return;
-  }
-  if (key === "y" || event.code === "KeyY") {
-    event.preventDefault();
-    event.stopPropagation();
-    redoEditor();
-    return;
-  }
   if (key === "s" || event.code === "KeyS") {
     event.preventDefault();
     event.stopPropagation();
-    save();
+    save().catch(error => showActionMessage("Save", error.message));
   }
   if (key === "f" || event.code === "KeyF") {
+    if (event.target.closest(".monaco-editor, dialog") || /^(INPUT|TEXTAREA)$/.test(event.target.tagName)) return;
     event.preventDefault();
     event.stopPropagation();
-    $("#search").focus();
+    sourceEditor.find();
   }
 }, true);
 window.aseHasUnsavedChanges = () => sourceDirty;
