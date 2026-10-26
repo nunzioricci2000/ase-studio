@@ -19,9 +19,10 @@ project.
 The modified simulator source is maintained in the CAD group's
 [gem5 repository](https://github.com/cad-polito-it/gem5).
 
-Contributions are welcome. Feel free to
-[open an issue](https://github.com/cad-polito-it/ase-studio/issues), submit a
-pull request, or [contact us](mailto:behnam.farnaghinejad@polito.it).
+This personal fork is maintained at
+[nunzioricci2000/ase-studio](https://github.com/nunzioricci2000/ase-studio).
+Please report fork-specific problems in its
+[issue tracker](https://github.com/nunzioricci2000/ase-studio/issues).
 
 ## Installation
 
@@ -29,7 +30,7 @@ ASE Studio is designed to live at `ase_studio/` as a Git submodule of the
 simulator repository. Clone the parent repository with its submodules:
 
 ```bash
-git clone --branch main --recurse-submodules https://github.com/cad-polito-it/ase_riscv_gem5_sim.git
+git clone --branch fork/main --recurse-submodules https://github.com/nunzioricci2000/ase_riscv_gem5_sim.git
 cd ase_riscv_gem5_sim
 ```
 
