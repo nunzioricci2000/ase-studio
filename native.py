@@ -18,13 +18,13 @@ from gi.repository import Gio, GLib, Gtk, WebKit2  # noqa: E402
 
 STUDIO_ROOT = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("ASE_STUDIO_HOST_ROOT", STUDIO_ROOT.parent)).resolve()
-APPLICATION_ID = "it.polito.ASEStudio"
-WM_CLASS = "ASEStudio"
+APPLICATION_ID = "org.asestudio.Personal"
+WM_CLASS = "ASEStudioFork"
 ICON_PATH = STUDIO_ROOT / "frontend" / "icon.png"
 if str(STUDIO_ROOT) not in sys.path:
     sys.path.insert(0, str(STUDIO_ROOT))
 
-from backend import Handler, require_startup_repositories  # noqa: E402
+from backend import Handler, validate_runtime_environment  # noqa: E402
 from http.server import ThreadingHTTPServer  # noqa: E402
 
 
@@ -39,15 +39,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="ASE Studio native window")
     parser.add_argument("port", nargs="?", type=int, default=8765)
     parser.add_argument("--development", action="store_true",
-                        help="Use this checkout without switching repository branches")
+                        help="Compatibility option; all launches preserve the current branches")
     args = parser.parse_args()
     GLib.set_prgname(WM_CLASS)
-    GLib.set_application_name("ASE Studio")
+    GLib.set_application_name("ASE Studio — Fork")
     if ICON_PATH.exists():
         Gtk.Window.set_default_icon_from_file(str(ICON_PATH))
     try:
-        if not args.development:
-            require_startup_repositories()
+        validate_runtime_environment()
     except ValueError as error:
         message, _status = error.args[0]
         print(message, file=sys.stderr)
@@ -55,7 +54,7 @@ def main() -> int:
             modal=True,
             message_type=Gtk.MessageType.ERROR,
             buttons=Gtk.ButtonsType.CLOSE,
-            text="Unsupported repository branches",
+            text="Simulator runtime unavailable",
         )
         dialog.set_title("ASE Studio startup")
         dialog.format_secondary_text(message)
@@ -86,8 +85,8 @@ def main() -> int:
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
 
-        window = Gtk.ApplicationWindow(application=app, title="ASE Studio")
-        # GLib.set_prgname supplies ASEStudio as the X11 WM_CLASS. The GTK
+        window = Gtk.ApplicationWindow(application=app, title="ASE Studio — Fork")
+        # GLib.set_prgname supplies ASEStudioFork as the X11 WM_CLASS. The GTK
         # application ID supplies the corresponding Wayland application ID.
         window.set_default_size(1440, 900)
         window.set_size_request(900, 600)

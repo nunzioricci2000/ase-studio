@@ -107,10 +107,22 @@ To preview a separate Studio worktree against an existing simulator checkout:
 ASE_STUDIO_HOST_ROOT=/path/to/ase_riscv_gem5_sim ./launch.sh --development
 ```
 
-`--development` explicitly skips automatic repository branch switching and loads
-the backend from this Studio checkout. It still uses the specified host's projects
-and toolchain; normal launches retain deployment-branch checks. Set
-`ASE_STUDIO_PORT` to choose another port.
+All launches validate the simulator runtime without fetching Git remotes or
+switching branches. `--development` remains accepted for compatibility. The
+backend always comes from this Studio checkout. `ASE_STUDIO_HOST_ROOT` selects
+the simulator projects and toolchain; `ASE_STUDIO_PORT` selects another port.
+
+This personal fork installs as **ASE Studio (fork)** with its own desktop ID,
+`org.asestudio.Personal`, so the original installation can coexist.
+
+The updater only fast-forwards the current branch from `origin`. Local changes,
+divergent branches, detached HEADs and branches tracking another remote are never
+reset or switched automatically. Commit or stash tracked setup and program edits
+before updating. In a submodule installation, the simulator pins the Studio
+commit; an external Studio worktree updates independently and leaves its host
+repository alone. Keep `upstream` for manually reviewing original-project changes.
+
+Run the fork update regression checks with `python3 -m unittest discover -s tests -p 'test_fork.py'`.
 
 Additional native and integration checks:
 

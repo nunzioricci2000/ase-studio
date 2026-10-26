@@ -4,9 +4,9 @@
 set -euo pipefail
 
 studio_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-host_root="$(cd "$studio_dir/.." && pwd)"
+host_root="${ASE_STUDIO_HOST_ROOT:-$(cd "$studio_dir/.." && pwd)}"
 application_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-desktop_file="$application_dir/it.polito.ASEStudio.desktop"
+desktop_file="$application_dir/org.asestudio.Personal.desktop"
 
 install_system_dependencies() {
   if [[ ! -r /etc/os-release ]]; then
@@ -53,7 +53,7 @@ mkdir -p "$application_dir"
   echo "[Desktop Entry]"
   echo "Version=1.0"
   echo "Type=Application"
-  echo "Name=ASE Studio"
+  echo "Name=ASE Studio (fork)"
   echo "Comment=RISC-V assembly and pipeline teaching studio"
   printf 'TryExec=%s\n' "$studio_dir/launch.sh"
   printf 'Exec=env "ASE_STUDIO_HOST_ROOT=%s" "%s"\n' "$host_root" "$studio_dir/launch.sh"
@@ -62,7 +62,7 @@ mkdir -p "$application_dir"
   echo "Terminal=false"
   echo "Categories=Education;"
   echo "StartupNotify=true"
-  echo "StartupWMClass=ASEStudio"
+  echo "StartupWMClass=ASEStudioFork"
 } > "$desktop_file"
 chmod 0644 "$desktop_file"
 
@@ -74,7 +74,7 @@ if [[ -z "$desktop_dir" && -d "$HOME/Desktop" ]]; then
   desktop_dir="$HOME/Desktop"
 fi
 if [[ -n "$desktop_dir" && -d "$desktop_dir" ]]; then
-  desktop_shortcut="$desktop_dir/ASE Studio.desktop"
+  desktop_shortcut="$desktop_dir/ASE Studio Fork.desktop"
   install -m 0755 "$desktop_file" "$desktop_shortcut"
   if command -v gio >/dev/null 2>&1; then
     gio set "$desktop_shortcut" metadata::trusted true >/dev/null 2>&1 || true

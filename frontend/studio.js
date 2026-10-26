@@ -135,7 +135,7 @@ function escapeHtml(text) {
 }
 
 function updateDirtyIndicator() {
-  document.title = sourceDirty ? "ASE Studio • Unsaved" : "ASE Studio";
+  document.title = sourceDirty ? "ASE Studio Fork • Unsaved" : "ASE Studio Fork";
   if (!current) return;
   $("#project-title").textContent = current.name + (sourceDirty ? " • Unsaved" : "");
 }
@@ -1792,48 +1792,20 @@ $("#update").onclick = async () => {
   $("#update").disabled = true;
   try {
     const status = await api("/api/update-status");
-    let discardLocalChanges = false;
-    const blocked = (status.repositories || []).filter(repository => repository.dirty);
-    if (blocked.length) {
-      const details = blocked.map(repository => {
-        const changes = (repository.changes || []).slice(0, 12).join("\n");
-        const remainder = (repository.changes || []).length > 12
-          ? `\n… and ${repository.changes.length - 12} more` : "";
-        return `${repository.label}:\n${changes || "Local tracked changes"}${remainder}`;
-      }).join("\n\n");
-      const choice = await actionDialog({
-        title: "Local changes block update",
-        message: `The following tracked files would be overwritten by the update:\n\n${details}\n\nYou can open an issue to discuss preserving these changes, or discard them and align the local repositories with their remote branches. Untracked projects are not deleted.`,
-        confirmLabel: "Discard and update",
-        confirmValue: "discard",
-        alternateLabel: "Open issue",
-        alternateValue: "issue",
-        cancelLabel: "Cancel",
-        danger: true
-      });
-      if (choice === "issue") {
-        const title = encodeURIComponent("Help updating ASE Studio with local changes");
-        const body = encodeURIComponent(`ASE Studio detected local tracked changes before updating:\n\n${details}\n\nPlease advise how these changes should be preserved or integrated.`);
-        window.open(`https://github.com/cad-polito-it/ase-studio/issues/new?title=${title}&body=${body}`, "_blank", "noopener");
-        await checkForUpdate();
-        return;
-      }
-      if (choice !== "discard") {
-        await checkForUpdate();
-        return;
-      }
-      discardLocalChanges = true;
+    if (!status.canUpdate) {
+      await showActionMessage("Update unavailable", status.message
+        + "\nCommit or stash local changes, and reconcile divergent branches with Git.");
+      await checkForUpdate();
+      return;
     }
-    lastNormalLog = discardLocalChanges
-      ? "Discarding selected local tracked changes and updating repositories…"
-      : "Updating repositories…";
+    lastNormalLog = "Updating from the configured origin remotes…";
     lastAdvancedLog = lastNormalLog;
     updateLog();
     showTab("output");
     const result = await api("/api/update", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({discardLocalChanges})
+      body: JSON.stringify({})
     });
     lastNormalLog = result.output;
     lastAdvancedLog = result.advancedOutput || result.output;

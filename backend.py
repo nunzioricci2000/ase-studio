@@ -62,15 +62,10 @@ MAX_SUBMISSION_ATTACHMENT_BYTES = 25 * 1024 * 1024
 MAX_SUBMISSION_TOTAL_ATTACHMENT_BYTES = 100 * 1024 * 1024
 GEM5_ISA = "RISCV"
 GEM5_VARIANT = "opt"
-OFFICIAL_GEM5_REPOSITORY = "github.com/cad-polito-it/gem5"
-REQUIRED_BRANCHES_FILE = ROOT / "ase_studio_branches.json"
 
 ENABLE_MEMORY_CONFIGURATION = True
 ENABLE_MULTI_ISSUE_CPU = True
 
-LOCAL_SETUP_PATHSPEC = "setup_default*"
-LOCAL_PROGRAM_PATHSPEC = "programs/**"
-LOCAL_PARENT_PATHSPECS = (LOCAL_SETUP_PATHSPEC, LOCAL_PROGRAM_PATHSPEC)
 SCAFFOLD_COMMENTS = {
     "# The text section contains the instructions that the CPU runs.",
     "# Make _start visible as the point where the program begins.",
@@ -4266,178 +4261,6 @@ def git_run(args, timeout=20, cwd=ROOT):
     return result.returncode == 0, output
 
 
-def required_repository_branches():
-    """Load release branches, including configs written before `studio`."""
-    try:
-        values = json.loads(REQUIRED_BRANCHES_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        fail(f"Required-branch configuration is missing: {REQUIRED_BRANCHES_FILE}", 500)
-    except (OSError, json.JSONDecodeError) as error:
-        fail(f"Required-branch configuration cannot be read: {error}", 500)
-    if not isinstance(values, dict):
-        fail("Required-branch configuration must be a JSON object.", 500)
-
-    # A checkout on a retired parent branch contains that branch's old config.
-    # Prefer the cached configuration on origin's default branch so startup can
-    # migrate the parent without requiring a manual checkout. This remains
-    # offline-friendly because it reads an existing remote-tracking ref.
-    current_branch = repository_current_branch(ROOT)
-    ok, remote_head = git_run(
-        ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=ROOT)
-    if ok and remote_head and current_branch != remote_head.removeprefix("origin/"):
-        found, remote_text = git_run(
-            ["show", f"{remote_head}:{REQUIRED_BRANCHES_FILE.name}"], cwd=ROOT)
-        if found:
-            try:
-                remote_values = json.loads(remote_text)
-            except json.JSONDecodeError:
-                remote_values = None
-            if isinstance(remote_values, dict):
-                values = remote_values
-
-    branches = {}
-    for key in ("simulator", "studio", "gem5"):
-        # `studio` was added after the first public branch-config format. Old
-        # installations therefore use the public ASE Studio default branch.
-        branch = values.get(key, "main" if key == "studio" else None)
-        if (not isinstance(branch, str) or not branch.strip()
-                or branch.startswith("-") or "\0" in branch
-                or any(character.isspace() for character in branch)):
-            fail(f"Required branch '{key}' is invalid.", 500)
-        branches[key] = branch.strip()
-    return branches
-
-
-def repository_current_branch(repository):
-    ok, branch = git_run(["branch", "--show-current"], cwd=repository)
-    if not ok:
-        return None
-    return branch.strip() or "(detached HEAD)"
-
-
-def ensure_repository_branch(repository, label, required_branch):
-    """Switch a checkout to its deployment branch without discarding work."""
-    repository = Path(repository).resolve()
-    current_branch = repository_current_branch(repository)
-    if current_branch is None:
-        return f"{label} is not a Git checkout: {repository}", False
-    if current_branch == required_branch:
-        return None, False
-
-    local_ref = f"refs/heads/{required_branch}"
-    remote_ref = f"refs/remotes/origin/{required_branch}"
-    local_exists, _ = git_run(
-        ["show-ref", "--verify", "--quiet", local_ref], cwd=repository)
-    if not local_exists:
-        remote_exists, _ = git_run(
-            ["show-ref", "--verify", "--quiet", remote_ref], cwd=repository)
-        if not remote_exists:
-            refspec = f"+refs/heads/{required_branch}:{remote_ref}"
-            fetched, fetch_output = git_run(
-                ["fetch", "origin", refspec], timeout=60, cwd=repository)
-            if not fetched:
-                detail = fetch_output.splitlines()[-1] if fetch_output else "fetch failed"
-                return (f"{label} requires branch '{required_branch}', but ASE Studio "
-                        f"could not fetch it from origin: {detail}"), False
-        # A single-branch clone may have the remote ref without a matching
-        # remote fetch rule, so create from the explicit ref without --track.
-        # ASE Studio's updater always names origin and the branch explicitly.
-        command = [
-            "switch",
-            "--discard-changes",
-            "--no-recurse-submodules",
-            "-c",
-            required_branch,
-            f"origin/{required_branch}",
-        ]
-    else:
-        command = [
-            "switch",
-            "--no-recurse-submodules",
-            "--discard-changes",
-            required_branch,
-        ]
-
-    switched, switch_output = git_run(command, timeout=60, cwd=repository)
-    if not switched:
-        detail = (switch_output.splitlines()[-1]
-                  if switch_output else "Git refused the branch switch")
-        return (
-            f"{label} requires branch '{required_branch}', but '{current_branch}' "
-            f"is checked out and the automatic switch failed: {detail}. "
-            "Commit or stash conflicting tracked changes, then start ASE Studio again."
-        ), False
-    actual_branch = repository_current_branch(repository)
-    if actual_branch != required_branch:
-        return (f"{label} did not reach required branch '{required_branch}' "
-                f"after switching; current branch is '{actual_branch}'."), False
-    return None, True
-
-
-def align_studio_submodule_branch(required_branch, expected_commit=None):
-    """Attach Studio to the parent-pinned remote commit without losing work."""
-    if expected_commit is None:
-        found, expected_commit = git_run(
-            ["rev-parse", "HEAD:ase_studio"], cwd=ROOT)
-        if not found:
-            return None, False
-    remote_ref = f"origin/{required_branch}"
-    found, remote_commit = git_run(
-        ["rev-parse", "--verify", remote_ref], cwd=STUDIO_ROOT)
-    if not found or expected_commit.strip() != remote_commit.strip():
-        # The parent may intentionally lag a newer Studio release. In that
-        # case the normal updater, not submodule reattachment, decides.
-        return None, False
-
-    found, current_commit = git_run(["rev-parse", "HEAD"], cwd=STUDIO_ROOT)
-    if not found:
-        return f"ASE Studio is not a Git checkout: {STUDIO_ROOT}", False
-    current_branch = repository_current_branch(STUDIO_ROOT)
-    if (current_branch == required_branch
-            and current_commit.strip() == remote_commit.strip()):
-        return None, False
-
-    _, dirty = git_run(
-        ["status", "--porcelain", "--untracked-files=no"], cwd=STUDIO_ROOT)
-    if dirty:
-        return (
-            "ASE Studio is at the parent-pinned release, but its branch cannot "
-            "be reattached because tracked files have local changes. Commit or "
-            "stash them, then start ASE Studio again."
-        ), False
-
-    local_ref = f"refs/heads/{required_branch}"
-    local_exists, local_commit = git_run(
-        ["rev-parse", "--verify", local_ref], cwd=STUDIO_ROOT)
-    if local_exists and local_commit.strip() != remote_commit.strip():
-        compared, ahead_text = git_run(
-            ["rev-list", "--count", f"{remote_ref}..{local_ref}"],
-            cwd=STUDIO_ROOT)
-        if compared and int(ahead_text or "0") > 0:
-            short_commit = local_commit.strip()[:12]
-            backup_branch = f"backup/ase-studio-main-{short_commit}"
-            backup_exists, _ = git_run(
-                ["show-ref", "--verify", "--quiet",
-                 f"refs/heads/{backup_branch}"], cwd=STUDIO_ROOT)
-            if not backup_exists:
-                backed_up, backup_output = git_run(
-                    ["branch", backup_branch, local_commit.strip()],
-                    cwd=STUDIO_ROOT)
-                if not backed_up:
-                    return ("ASE Studio could not preserve its divergent local "
-                            f"branch before reattachment: {backup_output}"), False
-                print(f"Preserved divergent ASE Studio commits on {backup_branch}.",
-                      flush=True)
-
-    switched, switch_output = git_run(
-        ["switch", "-C", required_branch, remote_ref],
-        timeout=60, cwd=STUDIO_ROOT)
-    if not switched:
-        detail = switch_output.splitlines()[-1] if switch_output else "Git refused"
-        return f"ASE Studio could not reattach '{required_branch}': {detail}", False
-    return None, True
-
-
 def filesystem_git_checkout(path):
     """Find the checkout containing *path* without invoking Git."""
     path = Path(path).resolve()
@@ -4510,98 +4333,22 @@ def configured_gem5_location(values=None):
     }
 
 
-def ensure_configured_gem5_branch(location, required_branch):
-    """Select writable gem5, or request action for a shared checkout."""
-    if not location.get("repository"):
-        if location.get("filesystemWritable"):
-            return ("The configured gem5 build is not inside a Git checkout: "
-                    f"{location['buildDir']}"), False
-        # A shared binary-only installation has no branch metadata to inspect.
-        return None, False
-
-    gem5_root = Path(location["repository"])
-    ok, top = git_run(["rev-parse", "--show-toplevel"], cwd=gem5_root)
-    if not ok:
-        return f"The configured gem5 source is not a Git checkout: {gem5_root}", False
-    actual_root = Path(top).resolve()
-    current_branch = repository_current_branch(actual_root)
-    if current_branch is None:
-        return f"gem5 is not a Git checkout: {actual_root}", False
-    if current_branch == required_branch:
-        return None, False
-    if not location.get("writable"):
-        return (
-            f"The system-managed gem5 installation at {actual_root} is on "
-            f"branch '{current_branch}', but ASE Studio requires "
-            f"'{required_branch}'. Ask an administrator to switch the shared "
-            "checkout to the required branch."
-        ), False
-    return ensure_repository_branch(actual_root, "gem5", required_branch)
-
-
-def require_startup_repositories():
-    """Select supported parent/Studio branches and validate the gem5 branch."""
-    required = required_repository_branches()
+def validate_runtime_environment():
+    """Validate runtime files without fetching, switching or resetting Git."""
     problems = []
-    switched_labels = []
-
-    problem, switched = ensure_repository_branch(
-        ROOT, "Simulator", required["simulator"])
-    if problem:
-        problems.append(problem)
-    elif switched:
-        switched_labels.append(f"Simulator -> {required['simulator']}")
-
-    studio_problem, studio_aligned = align_studio_submodule_branch(
-        required["studio"])
-    if studio_problem:
-        problems.append(studio_problem)
-    elif studio_aligned:
-        switched_labels.append(f"ASE Studio -> {required['studio']}")
-    else:
-        problem, switched = ensure_repository_branch(
-            STUDIO_ROOT, "ASE Studio", required["studio"])
-        if problem:
-            problems.append(problem)
-        elif switched:
-            switched_labels.append(f"ASE Studio -> {required['studio']}")
-
-    values = setup_environment()
-    values.update(environment_overrides())
-    location = configured_gem5_location(values)
-    if location.get("error"):
-        problems.append(f"The configured gem5 path is invalid: {location['error']}")
-    elif not Path(location["buildDir"]).is_dir():
-        problems.append(
-            f"The configured gem5 build directory does not exist: {location['buildDir']}")
-    else:
-        problem, switched = ensure_configured_gem5_branch(
-            location, required["gem5"])
-        if problem:
-            problems.append(problem)
-        elif switched:
-            switched_labels.append(f"gem5 -> {required['gem5']}")
+    if not (ROOT / "setup_default").is_file():
+        problems.append(f"Simulator setup file is missing: {ROOT / 'setup_default'}")
+    if not PROGRAMS.is_dir():
+        problems.append(f"Programs directory is missing: {PROGRAMS}")
+    if not problems:
+        location = configured_gem5_location()
+        if location.get("error"):
+            problems.append(location["error"])
+        elif not os.access(location["executable"], os.X_OK):
+            problems.append(f"The RISC-V gem5 executable is missing or not executable: {location['executable']}")
     if problems:
-        detail = "\n".join(f"- {problem}" for problem in problems)
-        fail(
-            "ASE Studio cannot start because its repositories do not match "
-            "the supported deployment.\n"
-            f"{detail}\n"
-            f"Change required branch names in {REQUIRED_BRANCHES_FILE}.",
-            500,
-        )
-    if switched_labels:
-        print("ASE Studio selected required branches: "
-              + ", ".join(switched_labels), flush=True)
-    return required
-
-
-def normalized_git_remote(value):
-    """Normalize common HTTPS/SSH GitHub URLs for identity checks."""
-    remote = value.strip().removesuffix(".git").removesuffix("/")
-    remote = re.sub(r"^git@github\.com:", "github.com/", remote)
-    remote = re.sub(r"^(?:https?|ssh)://(?:git@)?", "", remote)
-    return remote.lower()
+        fail("ASE Studio runtime is incomplete. Check the host path and install the simulator dependencies.\n"
+             + "\n".join(f"- {problem}" for problem in problems), 500)
 
 
 def configured_gem5_checkout(values=None):
@@ -4636,13 +4383,10 @@ def configured_gem5_checkout(values=None):
                 "message": ("The build works, but its source directory is not "
                             "a valid Git checkout; updates cannot be checked.")}
     ok, origin = git_run(["remote", "get-url", "origin"], cwd=repository)
-    if not ok or normalized_git_remote(origin) != OFFICIAL_GEM5_REPOSITORY:
-        shown = origin if ok and origin else "no origin remote"
+    if not ok or not origin:
         return {"managed": False, "path": str(repository),
                 "buildDir": str(build_dir), "executable": str(executable),
-                "message": ("The build is not connected to the official "
-                            f"cad-polito-it/gem5 repository ({shown}); "
-                            "updates cannot be checked.")}
+                "message": "The gem5 checkout has no origin remote; update it manually."}
     try:
         target = str(executable.relative_to(repository))
     except ValueError:
@@ -4670,60 +4414,46 @@ def gem5_update_status(refresh=False):
 
 
 def repository_update_status(path, label, refresh=False, ignored_paths=()):
+    """Only fast-forward the current branch from origin; never pick a branch."""
     path = Path(path).resolve()
+    result = {"label": label, "path": str(path), "managed": False,
+              "available": False, "canUpdate": False, "dirty": False}
     ok, top = git_run(["rev-parse", "--show-toplevel"], cwd=path)
     if not ok or Path(top).resolve() != path:
-        return {"label": label, "managed": False, "available": False,
-                "canUpdate": False, "message": f"{label}: Git repository not configured."}
-    _, branch = git_run(["branch", "--show-current"], cwd=path)
-    remote_ref = f"origin/{branch}" if branch else ""
-    if refresh:
-        fetched, fetch_message = git_run(["fetch", "--quiet", "origin"], cwd=path)
-        if not fetched:
-            return {"label": label, "managed": True, "available": False,
-                    "canUpdate": False,
-                    "message": f"{label}: could not check for updates: {fetch_message}"}
-    if not remote_ref:
-        ok, remote_ref = git_run(
-            ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
-            cwd=path,
-        )
-        if not ok:
-            remote_ref = next((candidate for candidate in ("origin/main", "origin/master")
-                               if git_run(["rev-parse", "--verify", candidate], cwd=path)[0]), "")
-    exists = bool(remote_ref) and git_run(["rev-parse", "--verify", remote_ref], cwd=path)[0]
-    if not exists:
-        return {"label": label, "managed": True, "available": False,
-                "canUpdate": False, "message": f"{label}: remote branch unavailable."}
-    compared, counts = git_run(
-        ["rev-list", "--left-right", "--count", f"HEAD...{remote_ref}"], cwd=path)
-    if not compared:
-        return {"label": label, "managed": True, "available": False,
-                "canUpdate": False, "message": f"{label}: {counts}"}
-    ahead, behind = (int(value) for value in counts.split())
-    # Only tracked changes can be overwritten by a normal pull. Untracked
-    # student projects and generated output are intentionally preserved and
-    # do not disable updates. Shared tracked files such as programs/demo.mk
-    # must remain visible to the preflight check.
-    status_args = ["status", "--porcelain", "--untracked-files=no", "--", "."]
+        return {**result, "message": f"{label}: Git repository not configured."}
+    status_args = ["status", "--porcelain", "--", "."]
     status_args.extend(f":(exclude){item}" for item in ignored_paths)
-    _, dirty_output = git_run(status_args, cwd=path)
-    dirty_lines = dirty_output.splitlines()
-    dirty = bool(dirty_lines)
-    available = behind > 0
-    message = (f"{label}: {behind} update{'s' if behind != 1 else ''} available."
-               if available else f"{label}: up to date.")
-    if ahead:
-        message += f" Local checkout is {ahead} commit{'s' if ahead != 1 else ''} ahead."
-    if dirty:
-        message += " Local tracked changes require a choice before updating."
-    return {"label": label, "managed": True, "available": available,
-            "canUpdate": available and not dirty, "dirty": dirty, "branch": branch,
-            "remoteRef": remote_ref, "detached": not bool(branch),
-            "behind": behind, "message": message, "path": str(path),
-            "changes": dirty_lines,
-            "restorePathspec": [".", *(f":(exclude){item}"
-                                           for item in ignored_paths)]}
+    checked, changes = git_run(status_args, cwd=path)
+    result.update(managed=True, dirty=not checked or bool(changes), changes=changes.splitlines())
+    _, local_branch = git_run(["branch", "--show-current"], cwd=path)
+    if not local_branch:
+        return {**result, "detached": True,
+                "message": f"{label}: pinned commit; no branch will be selected automatically."}
+    found, tracking = git_run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], cwd=path)
+    if found and not tracking.startswith("origin/"):
+        return {**result, "message": f"{label}: tracks {tracking}; only origin is used by the app updater."}
+    remote_ref = tracking if found else f"origin/{local_branch}"
+    if refresh:
+        fetched, output = git_run(["fetch", "--quiet", "origin"], cwd=path)
+        if not fetched:
+            return {**result, "message": f"{label}: could not check origin: {output}"}
+    exists, _ = git_run(["rev-parse", "--verify", remote_ref], cwd=path)
+    if not exists:
+        return {**result, "message": f"{label}: no published branch for this checkout."}
+    compared, counts = git_run(["rev-list", "--left-right", "--count", f"HEAD...{remote_ref}"], cwd=path)
+    if not compared:
+        return {**result, "message": f"{label}: {counts}"}
+    ahead, behind = (int(value) for value in counts.split())
+    diverged = ahead > 0 and behind > 0
+    message = f"{label}: {behind} incoming commit(s), {ahead} local commit(s)."
+    if result["dirty"]:
+        message += " Commit or stash local changes before updating."
+    if diverged:
+        message += " Branches diverged; reconcile them with Git."
+    return {**result, "available": behind > 0,
+            "canUpdate": behind > 0 and not result["dirty"] and not diverged,
+            "branch": remote_ref.removeprefix("origin/"), "remoteRef": remote_ref,
+            "behind": behind, "ahead": ahead, "diverged": diverged, "message": message}
 
 
 def rebuild_configured_gem5(repository):
@@ -4789,214 +4519,64 @@ def update_status(refresh=False):
             ROOT,
             "Simulator",
             refresh,
-            # Source projects and setup_default variants are local student or
-            # deployment data. They must survive simulator updates.
-            ignored_paths=("ase_studio", *LOCAL_PARENT_PATHSPECS),
+            # Tracked setup and program changes block updates like any other edit.
+            ignored_paths=("ase_studio",),
         ),
         repository_update_status(STUDIO_ROOT, "ASE Studio", refresh),
         gem5_update_status(refresh),
     ]
+    # An independent Studio worktree must not change the host's submodule.
+    if STUDIO_ROOT.resolve() != (ROOT / "ase_studio").resolve():
+        repositories[0].update(available=False, canUpdate=False, dirty=False,
+            message="Simulator: external Studio worktree; update the host explicitly with Git.")
+    else:
+        # The parent commit is the release manifest for the submodule.
+        repositories[1].update(available=False, canUpdate=False,
+            message="ASE Studio: follows the commit pinned by the simulator repository.")
+        pinned_ok, pinned = git_run(["rev-parse", "HEAD:ase_studio"], cwd=ROOT)
+        head_ok, studio_head = git_run(["rev-parse", "HEAD"], cwd=STUDIO_ROOT)
+        if not pinned_ok or not head_ok or pinned != studio_head:
+            repositories[1].update(dirty=True,
+                message="ASE Studio: local checkout differs from the simulator pin; reconcile it with Git before updating.")
     available = any(item["available"] for item in repositories)
-    # Pulling the parent can move the Studio submodule, so local work in
-    # either checkout blocks the combined update even if only the other
-    # repository currently has new commits.
-    blocked = [item for item in repositories if item.get("dirty")]
-    return {
-        "available": available,
-        "canUpdate": available and not blocked,
-        "repositories": repositories,
-        "message": " ".join(item["message"] for item in repositories),
-        "checkedAt": int(time.time()),
-    }
+    blocked = any(item.get("dirty") or (item["available"] and not item["canUpdate"])
+                  for item in repositories)
+    return {"available": available, "canUpdate": available and not blocked,
+            "repositories": repositories,
+            "message": " ".join(item["message"] for item in repositories),
+            "checkedAt": int(time.time())}
 
 
-def discard_tracked_repository_changes(repository, pathspec=(".",)):
-    """Restore tracked files after the user explicitly chooses discard."""
-    repository = Path(repository)
-    restored, output = git_run(
-        ["restore", "--source=HEAD", "--staged", "--worktree", "--", *pathspec],
-        cwd=repository,
-    )
-    if not restored:
-        return False, output or "Git could not restore the tracked files."
-    return True, output
-
-
-def preserve_local_parent_files():
-    """Temporarily prepare local-only data while the parent repository pulls.
-
-    ``programs`` is a user workspace after installation, so preserve its whole
-    tree, including unchanged tracked files and untracked projects. This stops
-    later repository updates from modifying, adding, or deleting any program.
-    Deployment-local setup_default changes are preserved separately.
-    """
-    listed, output = git_run(
-        ["diff", "--name-only", "HEAD", "--", LOCAL_SETUP_PATHSPEC],
-        cwd=ROOT,
-    )
-    if not listed:
-        return None, output or "Could not inspect local setup files."
-    setup_snapshots = []
-    for relative_name in output.splitlines():
-        relative_path = Path(relative_name)
-        candidate = (ROOT / relative_name).resolve()
-        is_setup = (relative_path.parent == Path(".")
-                    and relative_path.name.startswith("setup_default"))
-        if (not candidate.is_relative_to(ROOT)
-                or not is_setup):
-            return None, f"Refusing to preserve an unexpected setup path: {relative_name}"
-        exists = candidate.is_file()
-        setup_snapshots.append({
-            "path": candidate,
-            "relative": relative_name,
-            "exists": exists,
-            "contents": candidate.read_bytes() if exists else None,
-            "mode": candidate.stat().st_mode if exists else None,
-        })
-
-    programs_path = ROOT / "programs"
-    if programs_path.is_symlink():
-        return None, "Refusing to update while the programs directory is a symbolic link."
-    if programs_path.exists() and not programs_path.is_dir():
-        return None, "The programs path exists but is not a directory."
-
-    try:
-        backup_root = Path(tempfile.mkdtemp(
-            prefix=".ase-studio-programs-backup-", dir=ROOT))
-        programs_backup = backup_root / "programs"
-        programs_existed = programs_path.exists()
-        if programs_existed:
-            shutil.copytree(programs_path, programs_backup, symlinks=True)
-            shutil.rmtree(programs_path)
-    except OSError as error:
-        if "backup_root" in locals():
-            shutil.rmtree(backup_root, ignore_errors=True)
-        return None, f"Could not back up the programs directory: {error}"
-
-    snapshot = {
-        "setupFiles": setup_snapshots,
-        "programsBackupRoot": backup_root,
-        "programsBackup": programs_backup,
-        "programsExisted": programs_existed,
-    }
-    restored, restore_output = git_run(
-        ["restore", "--source=HEAD", "--staged", "--worktree", "--",
-         LOCAL_SETUP_PATHSPEC, "programs"],
-        cwd=ROOT,
-    )
-    if not restored:
-        recovered, recovery_error = restore_local_parent_files(snapshot)
-        message = (restore_output
-                   or "Could not prepare local files for the repository update.")
-        if not recovered:
-            message += "\n" + recovery_error
-        return None, message
-    return snapshot, ""
-
-
-def restore_local_parent_files(snapshot):
-    """Restore the exact local programs tree and saved setup files."""
-    backup_root = snapshot["programsBackupRoot"]
-    programs_backup = snapshot["programsBackup"]
-    programs_path = ROOT / "programs"
-    try:
-        if programs_path.is_symlink() or programs_path.is_file():
-            programs_path.unlink()
-        elif programs_path.exists():
-            shutil.rmtree(programs_path)
-        if snapshot["programsExisted"]:
-            shutil.copytree(programs_backup, programs_path, symlinks=True)
-
-        for setup_snapshot in snapshot["setupFiles"]:
-            path = setup_snapshot["path"]
-            if setup_snapshot["exists"]:
-                path.write_bytes(setup_snapshot["contents"])
-                path.chmod(setup_snapshot["mode"] & 0o7777)
-            elif path.exists():
-                path.unlink()
-    except OSError as error:
-        return False, (
-            f"Could not restore local program/configuration files: {error}\n"
-            f"The recovery copy is available at {backup_root}")
-    shutil.rmtree(backup_root, ignore_errors=True)
-    return True, ""
-
-
-def pull_update(discard_local_changes=False):
+def pull_update():
     status = update_status(refresh=True)
     if not status["available"]:
         return {"ok": True, "output": status["message"], "advancedOutput": status["message"]}
-    discard_outputs = []
     if not status["canUpdate"]:
-        blocked = [item for item in status["repositories"] if item.get("dirty")]
-        if not discard_local_changes:
-            return {"ok": False, "needsDecision": True,
-                    "repositories": blocked, "output": status["message"],
-                    "advancedOutput": status["message"]}
-        for item in blocked:
-            restored, restore_output = discard_tracked_repository_changes(
-                item["path"], item.get("restorePathspec", ["."]))
-            if not restored:
-                message = (f"Could not discard tracked changes in {item['label']}:\n"
-                           f"{restore_output}")
-                return {"ok": False, "output": message, "advancedOutput": message}
-            changed = "\n".join(item.get("changes", [])) or "tracked files"
-            discard_outputs.append(
-                f"{item['label']}: discarded these local tracked changes before update:\n"
-                f"{changed}")
-        status = update_status(refresh=False)
-        if not status["canUpdate"]:
-            message = ("Tracked changes were restored, but the update is still blocked.\n"
-                       + status["message"])
-            return {"ok": False, "output": message, "advancedOutput": message}
-    outputs = discard_outputs
+        message = "Update blocked. Commit/stash local changes or reconcile divergent branches with Git.\n" + status["message"]
+        return {"ok": False, "output": message, "advancedOutput": message}
+    outputs = []
     ok = True
     parent = status["repositories"][0]
     if parent["available"]:
-        local_snapshots, preservation_error = preserve_local_parent_files()
-        if local_snapshots is None:
-            message = ("Could not preserve local project/configuration files before update:\n"
-                       + preservation_error)
-            return {"ok": False, "output": message, "advancedOutput": message}
         command = (["pull", "--ff-only", "origin", parent["branch"]]
                    if parent["branch"] else
                    ["merge", "--ff-only", parent["remoteRef"]])
         pulled, output = git_run(command, timeout=90, cwd=ROOT)
-        local_restored, local_restore_error = restore_local_parent_files(local_snapshots)
-        if not local_restored:
-            pulled = False
-            output = ((output + "\n") if output else "") + local_restore_error
-        else:
-            preserved = ["the complete programs directory"]
-            setup_files = local_snapshots["setupFiles"]
-            if setup_files:
-                preserved.append(
-                    "local setup files ("
-                    + ", ".join(item["relative"] for item in setup_files) + ")")
-            output = ((output + "\n") if output else "") + (
-                "Preserved " + " and ".join(preserved) + ".")
         ok = ok and pulled
         if output:
             outputs.append(f"Simulator:\n{output}")
-    if ok and (ROOT / ".gitmodules").exists():
+    if ok and parent["available"] and (ROOT / ".gitmodules").exists():
         submodule_ok, submodule_output = git_run(
-            ["submodule", "update", "--init", "--recursive", "ase_studio"],
-            timeout=90,
-            cwd=ROOT,
-        )
+            ["submodule", "sync", "--", "ase_studio"], cwd=ROOT)
+        if submodule_ok:
+            submodule_ok, submodule_output = git_run(
+                ["submodule", "update", "--init", "--recursive", "ase_studio"],
+                timeout=90, cwd=ROOT)
         ok = ok and submodule_ok
         if submodule_output:
             outputs.append(f"Submodule:\n{submodule_output}")
-        if submodule_ok:
-            branch_problem, branch_aligned = align_studio_submodule_branch(
-                required_repository_branches()["studio"])
-            if branch_problem:
-                ok = False
-                outputs.append(f"ASE Studio:\n{branch_problem}")
-            elif branch_aligned:
-                outputs.append("ASE Studio:\nReattached the local branch to the parent-pinned release.")
     studio = repository_update_status(STUDIO_ROOT, "ASE Studio", refresh=True)
-    if ok and studio["available"]:
+    if ok and STUDIO_ROOT.resolve() != (ROOT / "ase_studio").resolve() and studio["canUpdate"]:
         command = (["pull", "--ff-only", "origin", studio["branch"]]
                    if studio["branch"] else ["merge", "--ff-only", studio["remoteRef"]])
         pulled, output = git_run(command, timeout=90, cwd=STUDIO_ROOT)
@@ -5131,10 +4711,9 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/install-tool":
                 return self.send_json(launch_component_installer(data.get("component")))
             if self.path == "/api/update":
-                discard = data.get("discardLocalChanges", False)
-                if not isinstance(discard, bool):
-                    fail("Invalid update option.")
-                return self.send_json(pull_update(discard))
+                if data.get("discardLocalChanges"):
+                    fail("Discarding local changes is not supported. Use Git explicitly.")
+                return self.send_json(pull_update())
             if self.path == "/api/open-with":
                 return self.send_json(open_with_editor(data.get("name")))
             if self.path == "/api/submission/reveal":
@@ -5189,13 +4768,13 @@ MAKEFILE = "ASM = ./main.s\ninclude ../demo.mk\n"
 
 if __name__ == "__main__":
     try:
-        require_startup_repositories()
+        validate_runtime_environment()
     except ValueError as error:
         message, _status = error.args[0]
         print(message, file=sys.stderr)
         raise SystemExit(1)
     if "--check-startup" in sys.argv:
-        print("ASE Studio repository branches are valid.")
+        print("ASE Studio runtime is ready; repository branches were not changed.")
         raise SystemExit(0)
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
     try:
