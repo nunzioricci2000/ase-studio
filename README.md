@@ -1,5 +1,6 @@
 <!-- Modified in the personal fork on 2026-10-27: name the personal app and document automatic source saving. -->
 <!-- Modified in the personal fork on 2026-10-27: clarify licensing and redistribution requirements. -->
+<!-- Modified in the personal fork on 2026-10-27: document measured Studio CI and the corrected O3 engine check. -->
 # ASE Studio di Nunzio
 
 <p align="center">
@@ -109,6 +110,10 @@ npm run test:browser
 
 Use `CHROMIUM_PATH=/usr/bin/chromium npm run test:browser` to test with an
 installed Chromium. Keep `frontend/vendor/` and the lockfile with source changes.
+The fork's `Studio CI` workflow rebuilds and tests the frontend and backend on
+Linux and both macOS architectures, with a separate WebKitGTK check. Per-phase
+timestamps and logs are retained as artifacts; see [RELEASES.md](RELEASES.md).
+These checks do not compile gem5 or produce a desktop distribution by themselves.
 Monaco is pinned; upgrades must pass the edit-protection browser tests because
 the adapter guards the model's edit entry points before its undo stack changes.
 The build uses the pinned DOMPurify override in place of Monaco's bundled copy,
@@ -176,10 +181,11 @@ Additional native and integration checks:
   to verify draft recovery, label protection, diagnostics and superscalar controls.
 - `ASE_TEST_HOST_ROOT=/path/to/ase_riscv_gem5_sim python3 tests/studio-server.py --simulate`
   builds and simulates temporary arithmetic and branch-loop programs. Add
-  `--superscalar` to include O3 simulation checks. The installed gem5 22.1.0.0
-  build currently aborts in `InstructionQueue::getInstToExecute` for this check,
-  also with the unmodified upstream Studio backend (042dcca); the in-order
-  simulation and frontend/predictor tests pass.
+  `--superscalar` to include O3 simulation checks. Older optimized gem5 22.1.0.0
+  builds can abort in `InstructionQueue::getInstToExecute`; the parent fork's
+  `utils/gem5-timebuffer.patch` fixes the uninitialized buffer responsible for
+  this startup failure. Rebuild/update the engine before running this check.
+  The arithmetic and loop checks pass with both CPU modes using the fixed engine.
 
 ## License and educational use
 

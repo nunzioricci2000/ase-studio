@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Created in the personal fork on 2026-10-27: measure Studio checks independently of engine compilation.
+name: Studio CI
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'fix/**', 'release/**', 'hotfix/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    name: Studio checks (${{ matrix.runner }}, ${{ matrix.browser }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, browser: chromium}
+          - {runner: macos-15, browser: chromium}
+          - {runner: macos-15-intel, browser: chromium}
+          - {runner: ubuntu-24.04, browser: webkitgtk}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Gitflow routes
+        run: python3 scripts/gitflow.py check
+      - name: Install the Linux native webview test dependencies
+        if: matrix.browser == 'webkitgtk'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 xvfb xauth
+      - name: Check backend, generated editor and browser behavior
+        env:
+          TEST_BROWSER: ${{ matrix.browser }}
+        run: python3 scripts/check.py --browser "$TEST_BROWSER" --output "$RUNNER_TEMP/studio-checks"
+      - name: Verify generated editor is committed
+        run: |
+          git diff --check
+          git diff --exit-code -- frontend/vendor
+      - name: Retain timestamps and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: studio-checks-${{ matrix.runner }}-${{ matrix.browser }}
+          path: ${{ runner.temp }}/studio-checks/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Summarize measurements
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/studio-checks/report.md" ]]; then
+            cat "$RUNNER_TEMP/studio-checks/report.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
