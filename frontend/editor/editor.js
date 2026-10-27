@@ -46,6 +46,7 @@ export function createSourceEditor(container, {onChange, onSave}) {
   let listener = null;
   let selectedLine = null;
   let serial = 0;
+  let protectionEnabled = true;
   let statusTimer;
   function reject() {
     status.textContent = 'Entry and exit instructions are protected. No changes were applied.';
@@ -53,7 +54,7 @@ export function createSourceEditor(container, {onChange, onSave}) {
     statusTimer = setTimeout(() => { status.textContent = ''; }, 5000);
   }
   function decorate() {
-    protectedDecoration.set(model ? [...computeProtectedLines(model.getValue())].map(line=>({
+    protectedDecoration.set(model && protectionEnabled ? [...computeProtectedLines(model.getValue())].map(line=>({
       range:new monaco.Range(line+1,1,line+1,1),
       options:{isWholeLine:true,className:'ase-protected-line',glyphMarginClassName:'ase-protected-glyph',glyphMarginHoverMessage:{value:'Protected entry/exit instruction'},stickiness:monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges},
     })) : []);
@@ -66,7 +67,7 @@ export function createSourceEditor(container, {onChange, onSave}) {
     // Monaco has no cancellable before-change event. Guard its public model edit
     // entry points before either the document or native undo stack is changed.
     // Keep this covered by browser tests when upgrading the pinned Monaco version.
-    const allowed = edits => !touchesProtected(target.getValue(), edits.map(edit=>{
+    const allowed = edits => !protectionEnabled || !touchesProtected(target.getValue(), edits.map(edit=>{
       const range = target.validateRange(edit.range);
       const offset = target.getOffsetAt(range.getStartPosition());
       return {offset,length:target.getOffsetAt(range.getEndPosition())-offset};
@@ -108,6 +109,15 @@ export function createSourceEditor(container, {onChange, onSave}) {
       selectedLine = line;
       decorate();
       if (reveal && model && line > 0 && line <= model.getLineCount()) editor.revealLineInCenterIfOutsideViewport(line);
+    },
+    setIsa(isa) { if (model) model.aseIsaExtensions = isa?.extensions?.map(value=>value.toLowerCase()); },
+    setProtectionEnabled(enabled) { protectionEnabled = enabled; decorate(); },
+    goToPosition(line, column=1) {
+      if (!model) return;
+      const position = model.validatePosition({lineNumber:Number(line) || 1, column:Number(column) || 1});
+      editor.setPosition(position);
+      editor.revealPositionInCenter(position);
+      editor.focus();
     },
     setFontSize(size) { editor.updateOptions({fontSize:size,lineHeight:Math.round(size*1.65)}); },
     setTheme(dark) { monaco.editor.setTheme(dark ? 'ase-dark' : 'ase-light'); },

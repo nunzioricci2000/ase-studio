@@ -47,6 +47,7 @@ It can also install individual components or a complete frontend explicitly:
 ./utils/installation.sh toolchain
 ./utils/installation.sh gem5
 ./utils/installation.sh ase-studio
+./utils/installation.sh labinf
 ./utils/installation.sh visualizer
 ./utils/installation.sh all-ase
 ./utils/installation.sh all-qt
@@ -55,6 +56,11 @@ It can also install individual components or a complete frontend explicitly:
 `all-ase` installs the RISC-V toolchain, gem5, and ASE Studio. `all-qt`
 installs the same simulator dependencies with the Qt visualizer. The
 installer updates the portable paths and selected frontend in `setup_default`.
+
+On a LabInf workstation, the required compiler, gem5 build, and GUI runtime
+are already installed. Run `./utils/installation.sh labinf` after cloning to
+copy the paths from `setup_default.labinf` into `setup_default` and create the
+ASE Studio application-menu and desktop launchers without reinstalling tools.
 
 ASE Studio has no third-party pip dependencies; its backend uses the Python
 standard library. The native window requires Python 3, PyGObject, GTK 3, and
@@ -123,6 +129,11 @@ before updating. In a submodule installation, the simulator pins the Studio
 commit; an external Studio worktree updates independently and leaves its host
 repository alone. Keep `upstream` for manually reviewing original-project changes.
 
+The fork includes upstream Studio 1.6.0: superscalar predictors, virtualized
+pipeline navigation, memory pop-out, project folders, local drafts and compiler
+diagnostics. Draft recovery, label protection and diagnostic navigation use Monaco.
+Invalid tool paths can be repaired in Settings without blocking first launch.
+
 Run the fork update regression checks with `python3 -m unittest discover -s tests -p 'test_fork.py'`.
 
 Additional native and integration checks:
@@ -133,8 +144,14 @@ Additional native and integration checks:
   `python3 tests/studio-server.py`. It prints a URL and disposable project root.
   Pass both to `node tests/studio-browser.mjs URL SCRATCH_ROOT` to verify the
   application, saving, external reload, preferences, and pipeline navigation.
+  Run `node tests/upstream-browser.mjs URL` against the same disposable server
+  to verify draft recovery, label protection, diagnostics and superscalar controls.
 - `ASE_TEST_HOST_ROOT=/path/to/ase_riscv_gem5_sim python3 tests/studio-server.py --simulate`
-  builds and simulates temporary arithmetic and branch-loop programs.
+  builds and simulates temporary arithmetic and branch-loop programs. Add
+  `--superscalar` to include O3 simulation checks. The installed gem5 22.1.0.0
+  build currently aborts in `InstructionQueue::getInstToExecute` for this check,
+  also with the unmodified upstream Studio backend (042dcca); the in-order
+  simulation and frontend/predictor tests pass.
 
 ## License and educational use
 

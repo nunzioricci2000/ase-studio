@@ -1,5 +1,6 @@
 """Serve the real application against disposable projects; never switch branches."""
 import os
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -17,6 +18,12 @@ with tempfile.TemporaryDirectory(prefix='ase-monaco-projects-') as scratch:
     for name in ('setup_default', '.ase-studio-env.json'):
         if (host / name).exists():
             shutil.copy2(host / name, root / name)
+    settings_path = root / '.ase-studio-env.json'
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+        for key in ('PROGRAMS_DIRECTORY', 'SUBMISSION_DIRECTORY'):
+            settings.pop(key, None)
+        settings_path.write_text(json.dumps(settings))
     for name in ('tools', 'gem5'):
         (root / name).symlink_to(host / name, target_is_directory=True)
     shutil.copy2(host / 'programs/demo.mk', root / 'programs/demo.mk')
@@ -29,11 +36,17 @@ with tempfile.TemporaryDirectory(prefix='ase-monaco-projects-') as scratch:
     backend.update_status = lambda **kwargs: {'available': False, 'message': 'Test fixture'}
     if '--simulate' in sys.argv:
         for name in ('arithmetic', 'loop'):
-            built = backend.build(name)
-            assert built['ok'], built['advancedOutput']
-            simulated = backend.simulate(name)
-            assert simulated['ok'], simulated['advancedOutput']
-            print('PASS build and gem5 simulation:', name, flush=True)
+            for cpu in (('in-order', 'out-of-order') if '--superscalar' in sys.argv else ('in-order',)):
+                backend.save_project_config(root / 'programs' / name,
+                    {**backend.DEFAULT_CONFIG, 'cpu':cpu})
+                built = backend.build(name)
+                assert built['ok'], built['advancedOutput']
+                simulated = backend.simulate(name)
+                assert simulated['ok'], simulated['advancedOutput']
+                trace = backend.pipeline_for_display(name)
+                assert trace['cycles'] > 0, trace
+                print('PASS build, gem5 simulation and pipeline:', name, cpu, flush=True)
+
     else:
         server = ThreadingHTTPServer(('127.0.0.1', 0), backend.Handler)
         print(f'http://127.0.0.1:{server.server_address[1]}', flush=True)

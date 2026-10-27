@@ -1,3 +1,4 @@
+import {RISCV_OPCODE_CATALOG} from '../riscv-opcodes.js';
 // SPDX-License-Identifier: GPL-2.0-only
 // Instruction help is descriptive, not a guarantee of support by an ASE CPU.
 export const instructions = [];
@@ -100,6 +101,26 @@ export function completionContext(prefix) {
   if (code.startsWith('.')) return null;
   return /^\S*$/u.test(code) ? 'instruction' : 'register';
 }
+const upstreamInstructions = new Map(RISCV_OPCODE_CATALOG.map(item=>[item.mnemonic,item]));
+for (const item of RISCV_OPCODE_CATALOG) {
+  if (!instructions.some(existing=>existing.mnemonic===item.mnemonic)) {
+    instructions.push({mnemonic:item.mnemonic, operands:item.syntax, description:item.description, extension:item.extension});
+  }
+}
+
+export function instructionSnippet(mnemonic) {
+  const item = upstreamInstructions.get(mnemonic);
+  if (!item) return mnemonic;
+  return item.template.replace(/\{(\d+)\}/g, (_, index)=>
+    '${' + (Number(index)+1) + ':' + item.operands[Number(index)].placeholder + '}');
+}
+
+export function instructionEnabled(instruction, extensions) {
+  if (!extensions) return true;
+  if (instruction.extension.toLowerCase() === 'pseudo') return true;
+  return instruction.extension.toLowerCase().split(/\s*\+\s*/).every(extension=>extensions.includes(extension));
+}
+
 export function registerRiscv(monaco) {
   const catalog = new Map(instructions.map(item => [item.mnemonic, item]));
   monaco.languages.register({id:'riscv', extensions:['.s','.S','.asm']});
@@ -125,7 +146,7 @@ export function registerRiscv(monaco) {
       if (!context) return {suggestions:[]};
       const word = model.getWordUntilPosition(position);
       const range = {startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn};
-      return {suggestions:context === 'instruction' ? instructions.map(i=>({label:i.mnemonic,kind:monaco.languages.CompletionItemKind.Function,insertText:i.mnemonic,detail:`${i.operands} · ${i.extension}`,documentation:i.description,range})) : registers.map(r=>({label:r.name,kind:monaco.languages.CompletionItemKind.Variable,insertText:r.name,detail:r.detail,range}))};
+      return {suggestions:context === 'instruction' ? instructions.filter(i=>instructionEnabled(i,model.aseIsaExtensions)).map(i=>({label:i.mnemonic,kind:monaco.languages.CompletionItemKind.Function,insertText:model.getLineContent(position.lineNumber).slice(word.endColumn-1).trim() ? i.mnemonic : instructionSnippet(i.mnemonic),insertTextRules:monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,detail:`${i.operands} · ${i.extension}`,documentation:i.description,range})) : registers.map(r=>({label:r.name,kind:monaco.languages.CompletionItemKind.Variable,insertText:r.name,detail:r.detail,range}))};
     },
   });
   monaco.languages.registerHoverProvider('riscv', {

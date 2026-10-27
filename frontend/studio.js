@@ -1,3 +1,4 @@
+import {RISCV_OPCODE_CATALOG} from './riscv-opcodes.js';
 import {createSourceEditor} from './vendor/editor.js';
 /*
  * SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
@@ -16,6 +17,8 @@ let lastNormalLog = "";
 let lastAdvancedLog = lastNormalLog;
 let savedSource = "";
 let sourceDirty = false;
+let scaffoldProtectionEnabled = true;
+let scaffoldEditAuthorized = false;
 let messageDialogResolver = null;
 let messageDialogHasInput = false;
 let messageDialogConfirmValue = true;
@@ -25,7 +28,81 @@ let pipelineSelectTarget = null;
 let externalSyncBusy = false;
 let memoryWatches = [];
 let cpuConfigurationOpenedAs = null;
-let studioFeatures = {memoryConfiguration: false, multiIssueCpu: false};
+let o3Defaults = {};
+let predictorParameterDraft = {};
+const predictorNames = {
+  local: "Local counter (2-bit baseline)",
+  tournament: "Tournament (local + global)",
+  tage: "TAGE (tagged hybrid)",
+  bimode: "Bi-mode"
+};
+const predictorFields = {
+  local: [
+    ["localPredictorSize", "Counter storage (bits)", 2, 65536, "Power of two; entries = storage ÷ counter bits."],
+    ["localCtrBits", "Counter bits (n)", 1, 8, "Each branch-addressed entry has a saturating counter."],
+    ["BTBEntries", "Branch target buffer entries", 2, 65536, "Power of two."],
+  ],
+  tournament: [
+    ["localPredictorSize", "Local counters (entries)", 2, 65536, "Power of two."],
+    ["localCtrBits", "Local counter bits", 1, 8, ""],
+    ["localHistoryTableSize", "Local history entries", 2, 65536, "Power of two."],
+    ["globalPredictorSize", "Global counters (entries; 2^m)", 2, 65536, "Power of two; m = log₂(entries)."],
+    ["globalCtrBits", "Global counter bits (n)", 1, 8, ""],
+    ["choicePredictorSize", "Selector entries", 2, 65536, "Power of two; also affects global-history length."],
+    ["choiceCtrBits", "Selector counter bits", 1, 8, ""],
+    ["BTBEntries", "Branch target buffer entries", 2, 65536, "Power of two."],
+  ],
+  bimode: [
+    ["globalPredictorSize", "Direction counters per bank (entries)", 2, 65536, "Power of two; history length = log₂(entries)."],
+    ["globalCtrBits", "Direction counter bits", 1, 8, ""],
+    ["choicePredictorSize", "Selector entries", 2, 65536, "Power of two."],
+    ["choiceCtrBits", "Selector counter bits", 1, 8, ""],
+    ["BTBEntries", "Branch target buffer entries", 2, 65536, "Power of two."],
+  ],
+  tage: [
+    ["minHist", "Shortest tagged history (branches)", 1, 8192, ""],
+    ["maxHist", "Longest tagged history (branches)", 1, 8192, "Must exceed the shortest history."],
+    ["tagTableCounterBits", "Prediction counter bits", 1, 8, ""],
+    ["tagTableUBits", "Usefulness bits", 1, 2, "This gem5 implementation supports 1 or 2."],
+    ["tagTableTagWidths", "Tag widths (bits)", null, null, "Eight comma-separated values: 0 for the base, then seven tagged tables."],
+    ["logTagTableSizes", "Log₂ table entries", null, null, "Eight comma-separated values: base, then seven tagged tables."],
+    ["BTBEntries", "Branch target buffer entries", 2, 65536, "Power of two."],
+  ]
+};
+let studioFeatures = {
+  developerMode: false,
+  memoryConfiguration: false,
+  multiIssueCpu: false
+};
+let configuredProgramsDirectory = "";
+let memoryPopoutWindow = null;
+let pipelinePaintFrame = null;
+let pipelineResizeObserver = null;
+let changeContextMenu = null;
+let draftSaveTimer = null;
+const memoryWindowChannel = "BroadcastChannel" in window
+  ? new BroadcastChannel("ase-studio-memory-window") : null;
+
+if (memoryWindowChannel) {
+  memoryWindowChannel.onmessage = event => {
+    const message = event.data;
+    if (message?.type === "memory-request-state") {
+      publishMemoryWindowState();
+      return;
+    }
+    if (message?.type !== "memory-action") return;
+    if (message.action === "add") addMemoryWatch(message.name);
+    else if (message.action === "remove") removeMemoryWatch(message.index);
+    else if (message.action === "clear") clearMemoryWatches();
+    else if (message.action === "format") setMemoryFormat(message.value);
+    else if (message.action === "navigate-change") {
+      navigateToItemChange({
+        kind: "memory", key: message.address,
+        width: Number(message.width), label: message.label
+      }, message.direction);
+    }
+  };
+}
 
 function closeActionDialog(value) {
   const dialog = $("#message-dialog");
@@ -64,7 +141,7 @@ function showActionMessage(title, message) {
 }
 
 const sourceEditor = createSourceEditor($("#source-editor"), {
-  onChange: markSourceEdited,
+  onChange() { markSourceEdited(); scheduleLocalDraft(); clearDiagnostics(); refreshScaffoldProtectionUi(); clearSourceLineHighlight(); },
   onSave: () => save().catch(error => showActionMessage("Save", error.message)),
 });
 
@@ -106,6 +183,7 @@ async function api(url, options = {}) {
 async function loadStudioVersion() {
   try {
     const health = await api("/api/health");
+    o3Defaults = health.o3Defaults || {};
     $("#about-version").textContent = `Version ${health.version}`;
     applyDeveloperFeatures(health.features || {});
   } catch (_error) {
@@ -116,9 +194,11 @@ async function loadStudioVersion() {
 
 function applyDeveloperFeatures(features) {
   studioFeatures = {
+    developerMode: features.developerMode === true,
     memoryConfiguration: features.memoryConfiguration === true,
     multiIssueCpu: features.multiIssueCpu === true
   };
+  $("#developer-mode-badge").hidden = !studioFeatures.developerMode;
   $("#cpu-model-field").hidden = !studioFeatures.multiIssueCpu;
   const multiIssueOption = $("#cpu-model").querySelector('option[value="out-of-order"]');
   multiIssueOption.hidden = !studioFeatures.multiIssueCpu;
@@ -134,6 +214,20 @@ function escapeHtml(text) {
   })[character]);
 }
 
+function opcodeExtensionEnabled(entry) {
+  if (entry.extension === "Pseudo") return true;
+  const extensions = new Set((current?.isa?.extensions
+    || ["i", "m", "a", "f", "zicsr", "zifencei"])
+    .map(extension => extension.toLowerCase()));
+  return extensions.has(entry.extension.toLowerCase());
+}
+
+function activeOpcodeCandidates(prefix) {
+  return RISCV_OPCODE_CATALOG
+    .filter(entry => opcodeExtensionEnabled(entry)
+      && entry.mnemonic.toLowerCase().startsWith(prefix));
+}
+
 function updateDirtyIndicator() {
   document.title = sourceDirty ? "ASE Studio Fork • Unsaved" : "ASE Studio Fork";
   if (!current) return;
@@ -144,6 +238,517 @@ function markSourceEdited() {
   sourceDirty = Boolean(current) && sourceEditor.getValue() !== savedSource;
   updateDirtyIndicator();
 }
+
+function draftStorageKey(name) {
+  return name ? `ase-studio-draft:${name}` : "";
+}
+
+function setDraftStatus(message = "") {
+  const status = $("#draft-status");
+  if (!status) return;
+  status.textContent = message;
+  status.hidden = !message;
+  status.title = message;
+}
+
+function readLocalDraft(name) {
+  const key = draftStorageKey(name);
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (!draft || typeof draft.text !== "string" || typeof draft.timestamp !== "number") return null;
+    return draft;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function clearLocalDraft(name = current?.name) {
+  if (draftSaveTimer !== null) {
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = null;
+  }
+  const key = draftStorageKey(name);
+  if (key) {
+    try { localStorage.removeItem(key); } catch (_error) { /* Storage may be unavailable. */ }
+  }
+  setDraftStatus();
+}
+
+function writeLocalDraft() {
+  draftSaveTimer = null;
+  if (!current || !sourceDirty) return;
+  const text = sourceEditor.getValue();
+  if (text === savedSource) {
+    clearLocalDraft(current.name);
+    return;
+  }
+  try {
+    localStorage.setItem(draftStorageKey(current.name), JSON.stringify({
+      text,
+      timestamp: Date.now(),
+      sourceName: current.sourceName
+    }));
+    setDraftStatus("Local draft saved");
+  } catch (_error) {
+    setDraftStatus("Local draft unavailable");
+  }
+}
+
+function scheduleLocalDraft() {
+  if (!current) return;
+  if (!sourceDirty) {
+    clearLocalDraft(current.name);
+    return;
+  }
+  if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(writeLocalDraft, 250);
+}
+
+function clearDiagnostics() {
+  const container = $("#diagnostics");
+  if (!container) return;
+  container.hidden = true;
+  container.innerHTML = "";
+}
+
+function jumpToSourcePosition(lineNumber, columnNumber = 1) {
+  if (!current) return;
+  highlightSourceLine(lineNumber);
+  sourceEditor.goToPosition(lineNumber, columnNumber);
+}
+
+function linkerSymbolFromDiagnostic(text) {
+  const match = String(text || "").match(
+    /(?:undefined reference to|multiple definition of|against (?:the )?symbol)\s+[`'\"]([^`'\"]+)[`'\"]/i
+  );
+  return match ? match[1].trim() : "";
+}
+
+function linkerFunctionFromDiagnostic(text) {
+  const quoted = String(text || "").match(/\bin function\s+[`'\"]([^`'\"]+)[`'\"]/i);
+  if (quoted) return quoted[1].trim();
+  const plain = String(text || "").match(/\bin function\s+([A-Za-z_.$][\w.$]*)/i);
+  return plain ? plain[1].trim() : "";
+}
+
+function linkerSourceLocation(sourceText, symbol, functionName) {
+  if (!sourceText) return null;
+  const lines = String(sourceText).split(/\r?\n/);
+  const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const functionPattern = functionName
+    ? new RegExp(`^\\s*${escapeRegExp(functionName)}\\s*:`)
+    : null;
+  const symbolPattern = symbol
+    ? new RegExp(`(^|[^A-Za-z0-9_.$])${escapeRegExp(symbol)}(?=$|[^A-Za-z0-9_.$])`, "g")
+    : null;
+  const candidates = [];
+  let functionLine = -1;
+
+  lines.forEach((rawLine, index) => {
+    const code = rawLine.split("#", 1)[0];
+    if (functionPattern && functionLine < 0 && functionPattern.test(code)) functionLine = index;
+    if (!symbolPattern || !code.trim()
+        || /^\s*\.(?:globl|global|extern|weak|hidden|type|size|local|set)\b/i.test(code)
+        || new RegExp(`^\\s*${escapeRegExp(symbol)}\\s*:`).test(code)) return;
+    symbolPattern.lastIndex = 0;
+    let match;
+    while ((match = symbolPattern.exec(code))) {
+      const tokenOffset = match.index + (match[1] ? 1 : 0);
+      candidates.push({line: index + 1, column: tokenOffset + 1});
+      if (match.index === symbolPattern.lastIndex) symbolPattern.lastIndex += 1;
+    }
+  });
+
+  const scopedCandidates = functionLine >= 0
+    ? candidates.filter(candidate => candidate.line >= functionLine + 1)
+    : candidates;
+  const location = scopedCandidates[0] || candidates[0];
+  if (location) return location;
+  if (functionLine >= 0) {
+    const column = Math.max(1, lines[functionLine].search(/\S/) + 1);
+    return {line: functionLine + 1, column};
+  }
+  return null;
+}
+
+function parseCompilerDiagnostics(output) {
+  const sourceName = String(current?.sourceName || "").toLowerCase();
+  const sourceText = typeof document === "undefined"
+    ? "" : document.getElementById("body")?.value || "";
+  const diagnostics = [];
+  let linkerFunction = "";
+  String(output || "").split(/\r?\n/).forEach((line, index) => {
+    const match = line.match(/^(.*?\.(?:s|asm)):(\d+)(?::(\d+))?:\s*(?:(?:fatal\s+)?(error|warning|note)\s*:\s*)?(.*)$/i);
+    if (match) {
+      const file = match[1].trim();
+      const basename = file.split(/[\\/]/).pop().toLowerCase();
+      if (!sourceName || (basename !== sourceName && file.toLowerCase() !== sourceName)) return;
+      const severity = (match[4] || "error").toLowerCase();
+      const message = match[5].trim() || "Assembler diagnostic";
+      diagnostics.push({
+        severity,
+        file: basename,
+        line: Number(match[2]),
+        column: Number(match[3] || 1),
+        message,
+        outputLine: index + 1,
+        kind: "compiler"
+      });
+      return;
+    }
+    const trimmed = line.trim();
+    if (!trimmed || /^make(?:\[.*\])?:/i.test(trimmed)) return;
+    const functionName = linkerFunctionFromDiagnostic(trimmed);
+    if (functionName) linkerFunction = functionName;
+    if (!/(?:undefined reference to|multiple definition of|relocation .*\bagainst\s+(?:the\s+)?symbol|collect2:\s*error:|cannot find\s+-l|(?:ld|as):.*\bfatal error:|(?:ld|as):.*\berror:)/i.test(trimmed)) return;
+    const symbol = linkerSymbolFromDiagnostic(trimmed);
+    const location = symbol ? linkerSourceLocation(sourceText, symbol, linkerFunction) : null;
+    diagnostics.push({severity: "error", file: location ? sourceName : "",
+      line: location?.line || null, column: location?.column || 1,
+      message: trimmed, outputLine: index + 1, kind: "linker",
+      inferred: Boolean(location)});
+  });
+  return diagnostics;
+}
+
+function renderDiagnostics(entries, heading = "Source diagnostics") {
+  const container = $("#diagnostics");
+  if (!container) return;
+  if (!entries.length) {
+    clearDiagnostics();
+    return;
+  }
+  const shown = entries.slice(0, 40);
+  const remaining = entries.length - shown.length;
+  container.hidden = false;
+  container.innerHTML = `<div class="diagnostics-header">${escapeHtml(heading)} · ${entries.length}</div><div class="diagnostics-list">${shown.map((entry, index) => {
+    const location = entry.line
+      ? `${entry.file ? `${entry.file}:` : ""}${entry.line}:${entry.column || 1}`
+      : entry.kind === "linker" ? "linker" : "source";
+    const content = `<span class="diagnostic-location">${escapeHtml(location)}</span><span class="diagnostic-message">${escapeHtml(entry.message)}</span>`;
+    if (!entry.line) return `<div class="diagnostic-item ${escapeHtml(entry.severity || "error")}">${content}</div>`;
+    const title = entry.inferred ? "Jump to the inferred source location" : "Jump to source location";
+    return `<button type="button" class="diagnostic-item ${escapeHtml(entry.severity || "error")}" data-diagnostic-index="${index}" title="${title}">${content}</button>`;
+  }).join("")}${remaining > 0 ? `<div class="diagnostic-message">… and ${remaining} more diagnostics</div>` : ""}</div>`;
+  container.querySelectorAll("[data-diagnostic-index]").forEach(button => {
+    button.onclick = () => {
+      const entry = shown[Number(button.dataset.diagnosticIndex)];
+      if (entry?.line) jumpToSourcePosition(entry.line, entry.column);
+    };
+  });
+}
+
+function setDiagnostics(entries, heading = "Source diagnostics") {
+  renderDiagnostics(entries, heading);
+}
+
+function scaffoldEditsAllowed() {
+  return !scaffoldProtectionEnabled || scaffoldEditAuthorized;
+}
+
+function updateScaffoldProtectionUi(message = "") {
+  sourceEditor.setProtectionEnabled(scaffoldProtectionEnabled);
+  const control = $("#scaffold-protection");
+  const status = $("#scaffold-protection-status");
+  control.checked = scaffoldProtectionEnabled;
+  control.disabled = !current;
+  control.title = scaffoldProtectionEnabled
+    ? "Required _start and End labels and the exit block are read-only."
+    : "Label protection is off. Required labels and the exit block can be edited.";
+  status.hidden = !current || (scaffoldProtectionEnabled && !message);
+  status.textContent = message || (scaffoldProtectionEnabled
+    ? ""
+    : "Label protection is off. Simulation requires one _start label and one valid End exit block.");
+}
+
+function validateSimulationScaffold(text) {
+  const labels = {start: [], end: []};
+  const statements = [];
+  let startIsGlobal = false;
+  const labelPattern = /^([A-Za-z_.$][\w.$]*)\s*:\s*/;
+
+  String(text).split(/\r?\n/).forEach((rawLine, index) => {
+    let code = rawLine.split("#", 1)[0].trim();
+    if (/^\.(?:globl|global)\s+_start\b/i.test(code)) startIsGlobal = true;
+    while (true) {
+      const match = code.match(labelPattern);
+      if (!match) break;
+      const label = match[1];
+      if (label === "_start") {
+        labels.start.push({line: index + 1, nextStatement: statements.length});
+      } else if (label.toLowerCase() === "end") {
+        labels.end.push({line: index + 1, nextStatement: statements.length});
+      }
+      code = code.slice(match[0].length).trimStart();
+    }
+    if (code) statements.push(code);
+  });
+
+  const issues = [];
+  const describeLabels = (name, found) => {
+    if (!found.length) issues.push(`Missing required ${name}: label.`);
+    else if (found.length > 1) {
+      issues.push(`Found ${name}: on lines ${found.map(item => item.line).join(", ")}; keep only one.`);
+    }
+  };
+  describeLabels("_start", labels.start);
+  if (labels.start.length === 1 && !startIsGlobal) {
+    issues.push("The _start label must be exported with .globl _start.");
+  }
+  describeLabels("End", labels.end);
+
+  if (labels.end.length === 1) {
+    const end = labels.end[0];
+    const exit = statements.slice(end.nextStatement, end.nextStatement + 3);
+    if (exit.length < 3
+        || !/^li\s+(?:a0|x10)\s*,\s*0$/i.test(exit[0])
+        || !/^li\s+(?:a7|x17)\s*,\s*93$/i.test(exit[1])
+        || !/^ecall$/i.test(exit[2])) {
+      issues.push(`End: on line ${end.line} must be followed by li a0, 0; li a7, 93; and ecall.`);
+    }
+  }
+  return issues;
+}
+
+const INTEGER_REGISTER_ALIASES = {
+  zero: "x0", ra: "x1", sp: "x2", gp: "x3", tp: "x4",
+  t0: "x5", t1: "x6", t2: "x7", s0: "x8", fp: "x8", s1: "x9",
+  a0: "x10", a1: "x11", a2: "x12", a3: "x13", a4: "x14", a5: "x15",
+  a6: "x16", a7: "x17", s2: "x18", s3: "x19", s4: "x20", s5: "x21",
+  s6: "x22", s7: "x23", s8: "x24", s9: "x25", s10: "x26", s11: "x27",
+  t3: "x28", t4: "x29", t5: "x30", t6: "x31"
+};
+const FLOAT_REGISTER_ALIASES = {
+  ft0: "f0", ft1: "f1", ft2: "f2", ft3: "f3", ft4: "f4", ft5: "f5",
+  ft6: "f6", ft7: "f7", fs0: "f8", fs1: "f9", fa0: "f10", fa1: "f11",
+  fa2: "f12", fa3: "f13", fa4: "f14", fa5: "f15", fa6: "f16", fa7: "f17",
+  fs2: "f18", fs3: "f19", fs4: "f20", fs5: "f21", fs6: "f22", fs7: "f23",
+  fs8: "f24", fs9: "f25", fs10: "f26", fs11: "f27", ft8: "f28", ft9: "f29",
+  ft10: "f30", ft11: "f31"
+};
+
+function splitAssemblyOperands(text) {
+  const operands = [];
+  let token = "";
+  let depth = 0;
+  for (const character of String(text || "")) {
+    if (character === "(") depth += 1;
+    if (character === ")") depth = Math.max(0, depth - 1);
+    if (character === "," && depth === 0) {
+      operands.push(token.trim());
+      token = "";
+    } else token += character;
+  }
+  if (token.trim() || operands.length) operands.push(token.trim());
+  return operands;
+}
+
+function parseAssemblyLine(rawLine, lineNumber) {
+  const sourceCode = String(rawLine).split("#", 1)[0];
+  let code = sourceCode.trim();
+  let codeOffset = sourceCode.search(/\S/);
+  const labels = [];
+  const labelPattern = /^([A-Za-z_.$][\w.$]*)\s*:\s*/;
+  while (code) {
+    const label = code.match(labelPattern);
+    if (!label) break;
+    labels.push(label[1]);
+    code = code.slice(label[0].length);
+    codeOffset += label[0].length;
+    const leadingWhitespace = code.length - code.trimStart().length;
+    code = code.trimStart();
+    codeOffset += leadingWhitespace;
+  }
+  if (!code || code.startsWith(".")) return {line: lineNumber, labels, instruction: null};
+  const match = code.match(/^([A-Za-z][A-Za-z0-9_.]*)(?:\s+(.*))?$/);
+  if (!match) return {line: lineNumber, labels, instruction: null, malformed: code};
+  const operandsText = match[2] || "";
+  return {
+    line: lineNumber,
+    labels,
+    instruction: {
+      mnemonic: match[1].toLowerCase(),
+      operandsText,
+      operandsOffset: operandsText ? codeOffset + match[0].length - operandsText.length : null
+    }
+  };
+}
+
+function canonicalRegister(token) {
+  const value = String(token || "").trim().toLowerCase();
+  if (INTEGER_REGISTER_ALIASES[value]) return INTEGER_REGISTER_ALIASES[value];
+  if (FLOAT_REGISTER_ALIASES[value]) return FLOAT_REGISTER_ALIASES[value];
+  const integer = value.match(/^x(\d+)$/);
+  if (integer && Number(integer[1]) < 32) return `x${Number(integer[1])}`;
+  const floating = value.match(/^f(\d+)$/);
+  if (floating && Number(floating[1]) < 32) return `f${Number(floating[1])}`;
+  return null;
+}
+
+function registerTokens(text) {
+  const pattern = /\b(?:x\d+|f\d+|zero|ra|sp|gp|tp|fp|[ast]\d+|f[tsa]\d+)\b/gi;
+  return [...String(text || "").matchAll(pattern)].map(match => ({token: match[0], index: match.index}));
+}
+
+function instructionTemplateOperandCount(entry) {
+  const sample = String(entry.template || "").replace(/\{\d+\}/g, "x1");
+  const operandText = sample.replace(/^[^\s]+\s*/, "");
+  return operandText ? splitAssemblyOperands(operandText).length : 0;
+}
+
+function numericTokens(text) {
+  return splitAssemblyOperands(text).flatMap(operand => operand
+    .split(/[\s()]+/).map(token => token.trim()).filter(token =>
+      /^[-+]?(?:0x[0-9a-f]+|0b[01]+|0o[0-7]+|\d+)$/i.test(token)));
+}
+
+function numericValue(token) {
+  try {
+    const value = String(token).trim();
+    const sign = value.startsWith("-") ? -1 : 1;
+    const unsigned = value.replace(/^[+-]/, "");
+    return sign * Number(BigInt(unsigned));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function immediateConstraint(mnemonic, value) {
+  if (value === null || mnemonic.startsWith("c.")) return null;
+  if (/^(?:slli|srli|srai)$/.test(mnemonic)) return {min: 0, max: 31, label: "shift amount"};
+  if (/^csr(?:rw|rs|rc)i$/.test(mnemonic)) return {min: 0, max: 31, label: "CSR immediate"};
+  if (/^(?:beq|bne|blt|bge|bltu|bgeu)$/.test(mnemonic)) {
+    return {min: -4096, max: 4094, alignment: 2, label: "branch offset"};
+  }
+  if (/^(?:jal)$/.test(mnemonic)) {
+    return {min: -1048576, max: 1048574, alignment: 2, label: "jump offset"};
+  }
+  if (/^(?:lui|auipc)$/.test(mnemonic)) return {min: -524288, max: 1048575, label: "upper immediate"};
+  if (/^(?:addi|slti|sltiu|xori|ori|andi|jalr|lb|lh|lw|lbu|lhu|sb|sh|sw|flw|fld|fsw|fsd)$/.test(mnemonic)) {
+    return {min: -2048, max: 2047, label: "immediate"};
+  }
+  return null;
+}
+
+function validateProgramSource(text) {
+  const sourceLines = String(text).split(/\r?\n/);
+  const parsedLines = sourceLines.map((line, index) => parseAssemblyLine(line, index + 1));
+  const labels = new Map();
+  const errors = [];
+  parsedLines.forEach(parsed => parsed.labels.forEach(label => {
+    if (labels.has(label)) {
+      errors.push({severity: "error", line: parsed.line, column: 1,
+        message: `Duplicate label “${label}”.`, kind: "validation"});
+    } else labels.set(label, parsed.line);
+  }));
+
+  parsedLines.forEach(parsed => {
+    if (parsed.malformed) {
+      errors.push({severity: "error", line: parsed.line, column: 1,
+        message: "Could not parse this assembly statement.", kind: "validation"});
+      return;
+    }
+    if (!parsed.instruction) return;
+    const {mnemonic, operandsText} = parsed.instruction;
+    const allMatches = RISCV_OPCODE_CATALOG.filter(entry => entry.mnemonic.toLowerCase() === mnemonic);
+    const enabledMatches = activeOpcodeCandidates(mnemonic).filter(entry =>
+      entry.mnemonic.toLowerCase() === mnemonic);
+    if (!enabledMatches.length) {
+      const reason = allMatches.length
+        ? `Opcode “${mnemonic}” is not enabled by the active ISA.`
+        : `Unknown opcode “${mnemonic}”.`;
+      errors.push({severity: "error", line: parsed.line, column: 1, message: reason, kind: "validation"});
+      return;
+    }
+    const entry = enabledMatches[0];
+    const operands = splitAssemblyOperands(operandsText);
+    const expected = instructionTemplateOperandCount(entry);
+    const acceptsSymbolBaseForm = /^(?:l[bhwd]|fl[wd]|s[bhwd]|fs[wd])$/.test(mnemonic)
+      && operands.length === 3 && canonicalRegister(operands[2]);
+    if (operands.length !== expected && !acceptsSymbolBaseForm) {
+      errors.push({severity: "error", line: parsed.line, column: 1,
+        message: `${mnemonic} expects ${expected}${acceptsSymbolBaseForm ? " or 3" : ""} operand${expected === 1 ? "" : "s"}; found ${operands.length}.`,
+        kind: "validation"});
+    }
+
+    registerTokens(operandsText).forEach(({token, index}) => {
+      const canonical = canonicalRegister(token);
+      if (canonical) return;
+      errors.push({severity: "error", line: parsed.line,
+        column: Math.max(1, parsed.instruction.operandsOffset + index + 1),
+        message: `Invalid register “${token}”. Register numbers must be x0–x31 or f0–f31.`,
+        kind: "validation"});
+    });
+
+    const numbers = numericTokens(operandsText);
+    const range = immediateConstraint(mnemonic, numericValue(numbers[numbers.length - 1]));
+    if (range && numbers.length) {
+      const value = numericValue(numbers[numbers.length - 1]);
+      if (value < range.min || value > range.max) {
+        errors.push({severity: "error", line: parsed.line, column: 1,
+          message: `${range.label} ${value} is outside ${range.min}…${range.max}.`, kind: "validation"});
+      } else if (range.alignment && value % range.alignment !== 0) {
+        errors.push({severity: "error", line: parsed.line, column: 1,
+          message: `${range.label} must be aligned to ${range.alignment} bytes.`, kind: "validation"});
+      }
+    }
+
+    if (entry.operands.some(operand => operand.kind === "label") && operands.length) {
+      const target = operands[operands.length - 1].trim().replace(/[()]/g, "");
+      const targetMatch = target.match(/^([A-Za-z_.$][\w.$]*)/);
+      if (targetMatch && !canonicalRegister(targetMatch[1])
+          && !/^[-+]?(?:0x[0-9a-f]+|0b[01]+|0o[0-7]+|\d+)$/i.test(targetMatch[1])
+          && !labels.has(targetMatch[1])) {
+        errors.push({severity: "error", line: parsed.line, column: 1,
+          message: `Label “${targetMatch[1]}” is not defined in this source.`, kind: "validation"});
+      }
+    }
+  });
+  return errors;
+}
+
+function refreshScaffoldProtectionUi() {
+  if (!current) {
+    updateScaffoldProtectionUi();
+    return;
+  }
+  const issues = validateSimulationScaffold(sourceEditor.getValue());
+  if (scaffoldProtectionEnabled && issues.length) {
+    scaffoldProtectionEnabled = false;
+    scaffoldEditAuthorized = true;
+  }
+  updateScaffoldProtectionUi(issues.length
+    ? `Label protection is off because: ${issues.join(" ")}`
+    : "");
+}
+
+function resetScaffoldProtection() {
+  scaffoldProtectionEnabled = true;
+  scaffoldEditAuthorized = false;
+  refreshScaffoldProtectionUi();
+}
+
+$("#scaffold-protection").addEventListener("change", event => {
+  if (!current) return;
+  if (event.target.checked) {
+    const issues = validateSimulationScaffold(sourceEditor.getValue());
+    if (issues.length) {
+      scaffoldProtectionEnabled = false;
+      scaffoldEditAuthorized = true;
+      refreshScaffoldProtectionUi();
+      return;
+    }
+    scaffoldProtectionEnabled = true;
+  } else {
+    scaffoldProtectionEnabled = false;
+    scaffoldEditAuthorized = true;
+  }
+  refreshScaffoldProtectionUi();
+  syncEditor();
+});
 
 function highlightAsmLine(line) {
   const commentAt = line.indexOf("#");
@@ -156,12 +761,14 @@ function highlightAsmLine(line) {
       '<span class="register">$&</span>')
     .replace(/\b(c[._][a-z][\w.]*|add|addi|sub|sll|slli|slt|slti|sltu|sltiu|xor|xori|srl|srli|sra|srai|or|ori|and|andi|lui|auipc|lb|lbu|lh|lhu|lw|lwu|ld|sb|sh|sw|sd|mul|mulh|mulhsu|mulhu|div|divu|rem|remu|flw|fld|fsw|fsd|f(?:add|sub|mul|div|min|max)\.[sd]|f(?:madd|msub|nmsub|nmadd)\.[sd]|fsqrt\.[sd]|fsgnj[nx]?\.[sd]|f(?:eq|lt|le|class)\.[sd]|fcvt\.(?:w|wu|l|lu|s|d)\.(?:w|wu|l|lu|s|d)|fmv\.(?:x\.w|w\.x)|(?:lr|sc|amo(?:swap|add|xor|and|or|min|max|minu|maxu))\.w|beqz|bnez|beq|bne|blt|bge|bltu|bgeu|jal|jalr|j|jr|ret|call|tail|li|la|mv|neg|not|seqz|snez|sltz|sgtz|csrrw|csrrs|csrrc|csrrwi|csrrsi|csrrci|csrr|csrw|csrs|csrc|csrwi|csrsi|csrci|rdcycle|rdtime|rdinstret|fence\.i|fence|nop|ecall|ebreak|wfi|mret)\b/gi,
       '<span class="opcode">$&</span>')
-    .replace(/^\s*([\w.]+):/, '<span class="label">$1</span>:');
+    .replace(/^(\s*)([\w.]+):/, '$1<span class="label">$2</span>:');
 
   return code + (comment ? `<span class="comment">${escapeHtml(comment)}</span>` : "");
 }
 
 function syncEditor() {
+  sourceEditor.setIsa(current?.isa);
+  sourceEditor.setProtectionEnabled(scaffoldProtectionEnabled);
   sourceEditor.highlightLine(selectedSourceLine);
 }
 
@@ -172,8 +779,16 @@ function highlightSourceLine(lineNumber) {
   sourceEditor.highlightLine(selectedSourceLine, true);
 }
 
+function clearSourceLineHighlight() {
+  if (selectedSourceLine === null) return;
+  selectedSourceLine = null;
+  syncEditor();
+}
+
 async function loadProjects() {
   const data = await api("/api/projects");
+  const heading = document.querySelector(".project-panel-header h2");
+  if (heading) heading.title = `Programs folder: ${data.directory || "unknown"}`;
   $("#projects").innerHTML = data.projects.map(name =>
     `<button class="project ${name === current?.name ? "selected" : ""}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`
   ).join("");
@@ -193,7 +808,10 @@ async function resolveUnsavedProject(action) {
     alternateValue: "discard",
     cancelLabel: "Cancel"
   });
-  if (choice === "discard") return true;
+  if (choice === "discard") {
+    clearLocalDraft(current.name);
+    return true;
+  }
   if (choice !== "save") return false;
   try {
     await save();
@@ -215,6 +833,28 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
     api("/api/project?name=" + encodedName),
     api("/api/symbols?name=" + encodedName).catch(() => ({symbols: []}))
   ]);
+  const localDraft = readLocalDraft(name);
+  let recoveredDraft = null;
+  if (localDraft && localDraft.text !== opened.text) {
+    const timestamp = new Date(localDraft.timestamp).toLocaleString();
+    const choice = await actionDialog({
+      title: "Recover local draft?",
+      message: `ASE Studio found a local draft for “${name}” saved ${timestamp}. Recover it instead of the saved source?`,
+      confirmLabel: "Recover",
+      confirmValue: "recover",
+      alternateLabel: "Discard draft",
+      alternateValue: "discard",
+      cancelLabel: "Cancel"
+    });
+    if (choice === null) {
+      await loadProjects();
+      return false;
+    }
+    if (choice === "recover") recoveredDraft = localDraft;
+    else clearLocalDraft(name);
+  } else if (localDraft) {
+    clearLocalDraft(name);
+  }
   opened.dataSymbols = symbolData.symbols || [];
   opened.initialMemory = symbolData.initialMemory || {};
   opened.memoryMap = symbolData.memoryMap || [];
@@ -228,10 +868,14 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
   stepMode = false;
   $("#project-title").textContent = current.name;
   $("#source-name").textContent = current.sourceName;
-  sourceEditor.replaceDocument(current.text, current.sourceName);
+  sourceEditor.replaceDocument(recoveredDraft ? recoveredDraft.text : current.text, current.sourceName);
+  resetScaffoldProtection();
   savedSource = current.text;
-  sourceDirty = false;
+  sourceDirty = Boolean(recoveredDraft);
   updateDirtyIndicator();
+  setDraftStatus(recoveredDraft
+    ? `Recovered draft · ${new Date(recoveredDraft.timestamp).toLocaleTimeString()}` : "");
+  clearDiagnostics();
   $("#save").disabled = false;
   $("#duplicate").disabled = false;
   $("#open-with").disabled = false;
@@ -248,12 +892,17 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
   $("#cycle-position").textContent = "Cycle —/—";
   $("#step").disabled = false;
   $("#step").textContent = "Run Step";
+  updateCycleNavigation();
   syncEditor();
   renderRegisters();
   renderMemory();
   await loadProjects();
   lastNormalLog = "";
   lastAdvancedLog = lastNormalLog;
+  if (recoveredDraft) {
+    lastNormalLog = `Recovered a local draft for ${current.sourceName}. Save it when you are ready.`;
+    lastAdvancedLog = lastNormalLog;
+  }
   updateLog();
   showTab("output");
   return true;
@@ -266,11 +915,14 @@ async function save() {
   await api("/api/save", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({name: projectName, text: submittedSource})
+    body: JSON.stringify({name: projectName, text: submittedSource, allowScaffoldEdit: scaffoldEditsAllowed()})
   });
   if (current?.name !== projectName) return;
   savedSource = submittedSource;
   markSourceEdited();
+  scaffoldEditAuthorized = false;
+  scheduleLocalDraft();
+  clearSourceLineHighlight();
   lastNormalLog = "Saved " + current.sourceName + ".";
   lastAdvancedLog = lastNormalLog;
   updateLog();
@@ -309,6 +961,7 @@ async function renameCurrentProject() {
   try {
     const oldWatchKey = memoryWatchStorageKey(oldName);
     const savedWatches = oldWatchKey ? localStorage.getItem(oldWatchKey) : null;
+    const savedDraft = readLocalDraft(oldName);
     const result = await api("/api/projects", {
       method: "PATCH",
       headers: {"Content-Type": "application/json"},
@@ -318,6 +971,10 @@ async function renameCurrentProject() {
     if (savedWatches !== null) {
       localStorage.setItem(memoryWatchStorageKey(result.name), savedWatches);
       localStorage.removeItem(oldWatchKey);
+    }
+    if (savedDraft) {
+      localStorage.setItem(draftStorageKey(result.name), JSON.stringify(savedDraft));
+      localStorage.removeItem(draftStorageKey(oldName));
     }
     updateDirtyIndicator();
     await loadProjects();
@@ -381,6 +1038,7 @@ async function synchronizeExternalSource() {
     $("#cycle-next").disabled = true;
     $("#cycle-position").textContent = "Cycle —/—";
     updateDirtyIndicator();
+    refreshScaffoldProtectionUi();
     syncEditor();
     renderRegisters();
     renderPipeline();
@@ -457,6 +1115,17 @@ async function prepareSubmission() {
     await showActionMessage("Prepare submission", "Select at least one project.");
     return;
   }
+  if (selectedNames.includes(current.name)) {
+    const scaffoldIssues = validateSimulationScaffold(sourceEditor.getValue());
+    if (scaffoldIssues.length) {
+      const hint = scaffoldProtectionEnabled
+        ? "Turn off Protect labels to edit protected lines."
+        : "Correct the required labels and exit block, then try again.";
+      await showActionMessage("Cannot prepare submission",
+        `${scaffoldIssues.join("\n")}\n\n${hint}`);
+      return;
+    }
+  }
   const files = [...($("#submission-files").files || [])];
   if (files.length > 20) {
     await showActionMessage("Prepare submission", "Choose no more than 20 additional files.");
@@ -494,7 +1163,8 @@ async function prepareSubmission() {
   const currentWasSelected = selectedNames.includes(submittedProjectName);
   const projects = selectedNames.map(name => ({
     name,
-    source: name === submittedProjectName ? submittedSource : null
+    source: name === submittedProjectName ? submittedSource : null,
+    allowScaffoldEdit: name === submittedProjectName && scaffoldEditsAllowed()
   }));
   $("#submission-dialog").close();
   confirmButton.disabled = false;
@@ -520,12 +1190,19 @@ async function prepareSubmission() {
       })
     });
     if (currentWasSelected && current?.name === submittedProjectName) {
+      scaffoldEditAuthorized = false;
       savedSource = submittedSource;
       sourceDirty = sourceEditor.getValue() !== submittedSource;
       updateDirtyIndicator();
     }
     lastNormalLog = result.output;
     lastAdvancedLog = result.advancedOutput || result.output;
+    if (currentWasSelected && current?.name === submittedProjectName) {
+      const diagnostics = parseCompilerDiagnostics(lastAdvancedLog);
+      setDiagnostics(diagnostics, diagnostics.some(item => item.severity === "error")
+        ? "Compiler diagnostics" : "Compiler messages");
+      if (!sourceDirty) clearLocalDraft(current.name);
+    }
     updateLog();
     if (result.ok && result.archive) {
       try {
@@ -581,8 +1258,47 @@ async function prepareSubmission() {
   }
 }
 
+function renderLogOutput(log) {
+  const output = $("#output");
+  if (!output) return;
+  const text = String(log || "");
+  const diagnostics = parseCompilerDiagnostics(text);
+  const byLine = new Map();
+  diagnostics.filter(entry => entry.outputLine).forEach(entry => {
+    const entries = byLine.get(entry.outputLine) || [];
+    entries.push(entry);
+    byLine.set(entry.outputLine, entries);
+  });
+  const preferredDiagnostic = entries => {
+    const located = entries.filter(entry => entry.line);
+    const candidates = located.length ? located : entries;
+    const rank = {error: 0, warning: 1, note: 2};
+    return candidates.reduce((preferred, entry) => {
+      if (!preferred || (rank[entry.severity] ?? 3) < (rank[preferred.severity] ?? 3)) return entry;
+      return preferred;
+    }, null);
+  };
+  output.innerHTML = text.split(/\r?\n/).map((line, index) => {
+    const lineDiagnostics = byLine.get(index + 1) || [];
+    const diagnostic = preferredDiagnostic(lineDiagnostics);
+    const content = escapeHtml(line) || "&#8203;";
+    if (diagnostic?.line) {
+      const count = lineDiagnostics.length > 1
+        ? ` (${lineDiagnostics.length} diagnostics on this output line)` : "";
+      return `<button type="button" class="log-diagnostic ${escapeHtml(diagnostic.severity || "error")}" data-log-line="${index + 1}" title="Jump to ${escapeHtml(diagnostic.file || current?.sourceName || "source")} line ${diagnostic.line}${count}">${content}</button>`;
+    }
+    return `<span class="log-line">${content}</span>`;
+  }).join("");
+  output.querySelectorAll("[data-log-line]").forEach(button => {
+    button.onclick = () => {
+      const entry = preferredDiagnostic(byLine.get(Number(button.dataset.logLine)) || []);
+      if (entry?.line) jumpToSourcePosition(entry.line, entry.column);
+    };
+  });
+}
+
 function updateLog() {
-  $("#output").textContent = $("#advanced-logs").checked ? lastAdvancedLog : lastNormalLog;
+  renderLogOutput($("#advanced-logs").checked ? lastAdvancedLog : lastNormalLog);
 }
 
 function showTab(tab) {
@@ -607,6 +1323,15 @@ function resetPipelineViewport() {
 
 async function run(stepAfterRun = false) {
   if (!current) return;
+  const source = sourceEditor.getValue();
+  const sourceIssues = validateProgramSource(source);
+  const scaffoldIssues = validateSimulationScaffold(source);
+  const preRunIssues = [
+    ...sourceIssues,
+    ...scaffoldIssues.map(message => ({severity: "error", message, kind: "scaffold"}))
+  ];
+  clearDiagnostics();
+  clearSourceLineHighlight();
   if (!stepAfterRun) {
     stepMode = false;
     $("#step").textContent = "Run Step";
@@ -617,6 +1342,8 @@ async function run(stepAfterRun = false) {
   $("#export-pipeline").disabled = true;
   $("#expand-loops").disabled = true;
   $("#step").disabled = true;
+  $("#cycle-jump").disabled = true;
+  $("#cycle-jump-form button").disabled = true;
   $("#run").textContent = "Running…";
   lastNormalLog = "Building and simulating…";
   lastAdvancedLog = lastNormalLog;
@@ -626,13 +1353,24 @@ async function run(stepAfterRun = false) {
     const result = await api("/api/run", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({name: current.name, text: sourceEditor.getValue()})
+      body: JSON.stringify({name: current.name, text: source,
+        allowScaffoldEdit: scaffoldEditsAllowed()})
     });
-    savedSource = sourceEditor.getValue();
-    sourceDirty = false;
-    updateDirtyIndicator();
+    scaffoldEditAuthorized = false;
+    savedSource = source;
+    markSourceEdited();
+    scheduleLocalDraft();
     lastNormalLog = result.output;
     lastAdvancedLog = result.advancedOutput || result.output;
+    const compilerDiagnostics = parseCompilerDiagnostics(lastAdvancedLog);
+    if (compilerDiagnostics.length) {
+      setDiagnostics(compilerDiagnostics, compilerDiagnostics.some(item => item.severity === "error")
+        ? "Compiler diagnostics" : "Compiler messages");
+    } else if (!result.ok && preRunIssues.length) {
+      setDiagnostics(preRunIssues.map(issue => ({...issue, severity: "warning"})), "Pre-run hints");
+    } else {
+      clearDiagnostics();
+    }
     updateLog();
     if (result.ok) {
       const trace = await api("/api/pipeline?name=" + encodeURIComponent(current.name));
@@ -678,6 +1416,7 @@ async function run(stepAfterRun = false) {
     $("#expand-loops").disabled = false;
     $("#step").disabled = false;
     $("#run").textContent = "Run ▶";
+    updateCycleNavigation();
   }
 }
 
@@ -695,6 +1434,7 @@ function resetSimulation() {
   $("#cycle-prev").disabled = true;
   $("#cycle-next").disabled = true;
   $("#cycle-position").textContent = "Cycle —/—";
+  updateCycleNavigation();
   $("#pipeline-grid").innerHTML = "";
   $("#pipeline-diagram").innerHTML = "";
   $("#pipeline-summary").textContent = "No pipeline trace loaded. Press Run or Run Step.";
@@ -767,15 +1507,18 @@ function renderRegisters() {
   }
   const integerAbi = ["zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0/fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"];
   const floatAbi = ["ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7", "fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7", "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"];
-  const renderColumn = (prefix, aliases, format, width) => aliases.map((alias, index) => {
+  const integerRoles = ["constant zero", "return address", "stack pointer", "global pointer", "thread pointer", "temporary", "temporary", "temporary", "saved register / frame pointer", "saved register", "argument / return value", "argument / return value", "argument / return value", "argument / return value", "argument / return value", "argument / return value", "argument / return value", "argument / return value", "saved register", "saved register", "saved register", "saved register", "saved register", "saved register", "saved register", "saved register", "saved register", "saved register", "temporary", "temporary", "temporary", "temporary"];
+  const floatRoles = ["temporary FP register", "temporary FP register", "temporary FP register", "temporary FP register", "temporary FP register", "temporary FP register", "temporary FP register", "temporary FP register", "saved FP register", "saved FP register", "FP argument / return value", "FP argument / return value", "FP argument / return value", "FP argument / return value", "FP argument / return value", "FP argument / return value", "FP argument / return value", "FP argument / return value", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "saved FP register", "temporary FP register", "temporary FP register", "temporary FP register", "temporary FP register"];
+  const renderColumn = (prefix, aliases, roles, format, width) => aliases.map((alias, index) => {
     const name = `${prefix}${index}`;
-    return `<div class="register-value${changed.has(name) ? " changed" : ""}"><strong>${name}</strong><span>${alias}</span><code>${formatWordValue(state[name] || 0, format, width)}</code></div>`;
+    const label = `${name} / ${alias.replace("/", " / ")} — ${roles[index] || "register"}`;
+    return `<div class="register-value${changed.has(name) ? " changed" : ""}" data-register-change="${name}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><strong>${name}</strong><span>${escapeHtml(alias)}</span><code>${formatWordValue(state[name] || 0, format, width)}</code></div>`;
   }).join("");
   $("#pipeline-pc").textContent = `PC ${pc}`;
   $("#pipeline-pc").classList.toggle("changed", pcChanged);
   const floatWidth = pipelineData.configuration?.floatingPointPrecision === "double" ? 64 : 32;
-  integerContainer.innerHTML = renderColumn("x", integerAbi, $("#integer-register-format").value, 32);
-  floatContainer.innerHTML = renderColumn("f", floatAbi, $("#float-register-format").value, floatWidth);
+  integerContainer.innerHTML = renderColumn("x", integerAbi, integerRoles, $("#integer-register-format").value, 32);
+  floatContainer.innerHTML = renderColumn("f", floatAbi, floatRoles, $("#float-register-format").value, floatWidth);
 }
 
 async function runStep() {
@@ -800,12 +1543,86 @@ function movePlaybackCycle(delta) {
   showTab("pipeline");
 }
 
+function positionPipelineCycle(cycle) {
+  const scroll = $("#pipeline-scroll");
+  const grid = $("#pipeline-grid");
+  if (!pipelineData) return;
+  const frozenWidth = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--address-width"))
+    + Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--instruction-width"))
+    + Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--flow-width"));
+  const cellWidth = Number($("#cell-width").value);
+  const displayCycles = pipelineDisplayCycles();
+  const cycleIndex = displayCycles.findIndex(value => value >= cycle);
+  // The three frozen columns occupy positions 1–3. Leave one preceding
+  // cycle visible so the requested cycle appears at table column 5.
+  const pipelineWidth = frozenWidth + displayCycles.length * cellWidth;
+  const horizontalTail = Math.max(
+    0, scroll.clientWidth - frozenWidth - 2 * cellWidth);
+  grid.style.width = `${pipelineWidth + horizontalTail}px`;
+  scroll.scrollLeft = Math.max(
+    0, (cycleIndex - 1) * cellWidth);
+
+  const eventRow = displayedPipelineRows().findIndex(row =>
+    row.cycles?.[String(cycle)] !== undefined);
+  if (eventRow < 0) return;
+  const rowHeight = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--row-height"));
+  // The sticky header is row 1. Preserve one preceding instruction when
+  // possible so the first event for this cycle appears at table row 3.
+  const rows = grid.querySelector(".pipeline-rows");
+  const verticalTail = Math.max(0, scroll.clientHeight - 3 * rowHeight);
+  rows.style.height = `${displayedPipelineRows().length * rowHeight + verticalTail}px`;
+  scroll.scrollTop = Math.max(0, (eventRow - 1) * rowHeight);
+}
+
+async function jumpToCycle() {
+  if (!stepMode || !pipelineData || playbackCycle === null) {
+    await showActionMessage(
+      "Jump to cycle", "Jump to cycle is available after starting Run Step.");
+    return;
+  }
+  const rawCycle = $("#cycle-jump").value.trim();
+  if (!/^\d+$/.test(rawCycle)) {
+    await showActionMessage("Jump to cycle", "Enter a whole cycle number.");
+    return;
+  }
+  const targetCycle = Number(rawCycle);
+  if (targetCycle < 1 || targetCycle > pipelineData.cycles) {
+    await showActionMessage(
+      "Jump to cycle",
+      `Cycle ${targetCycle} is outside this trace. Enter a cycle from 1 to ${pipelineData.cycles}.`);
+    return;
+  }
+  playbackCycle = targetCycle;
+  selectedColumn = targetCycle;
+  $("#step").textContent = playbackCycle >= pipelineData.cycles
+    ? "Restart Step" : "Next Cycle";
+  renderPipeline();
+  showTab("pipeline");
+  positionPipelineCycle(targetCycle);
+}
+
 function updateCycleNavigation() {
   const hasTrace = Boolean(pipelineData && playbackCycle !== null);
   $("#cycle-position").textContent = hasTrace
     ? `Cycle ${playbackCycle}/${pipelineData.cycles}` : "Cycle —/—";
   $("#cycle-prev").disabled = !hasTrace || !stepMode || playbackCycle <= 1;
   $("#cycle-next").disabled = !hasTrace || !stepMode || playbackCycle >= pipelineData.cycles;
+  const canJump = hasTrace && stepMode;
+  const jumpInput = $("#cycle-jump");
+  jumpInput.disabled = !canJump;
+  $("#cycle-jump-form button").disabled = !canJump;
+  if (hasTrace) {
+    jumpInput.max = pipelineData.cycles;
+    jumpInput.placeholder = `1–${pipelineData.cycles}`;
+  } else {
+    jumpInput.removeAttribute("max");
+    jumpInput.placeholder = "Cycle";
+    jumpInput.value = "";
+  }
 }
 
 function renderPipelineDiagram() {
@@ -814,11 +1631,13 @@ function renderPipelineDiagram() {
   const o3 = config.cpu === "out-of-order";
   const visibleO3Stages = new Set(config.o3VisibleStages || ["issue", "execute", "memory", "cdb", "commit"]);
   const o3Stages = [
-    ["fetch", "Fetch", "F"], ["decode", "Decode", "D"],
-    ["rename", "Rename", "R"], ["issue", "Issue", "I"],
+    ["fetch", `Fetch × ${config.fetchWidth || 2}`, "F"],
+    ["decode", `Decode × ${config.decodeWidth || 2}`, "D"],
+    ["rename", `Rename × ${config.renameWidth || 2}`, "R"],
+    ["issue", `Issue × ${config.dispatchWidth || 2}`, "I"],
     ["execute", "EXE", "E"], ["memory", "MEM", "M"],
     ["cdb", `CDB × ${config.writebackWidth || 1}`, "C"],
-    ["commit", "Commit", "W"]
+    ["commit", `Commit × ${config.commitWidth || 2}`, "W"]
   ];
   const stages = o3
     ? o3Stages.filter(([key]) => visibleO3Stages.has(key)).map(([_key, label, code]) => [label, code])
@@ -828,13 +1647,19 @@ function renderPipelineDiagram() {
   const memoryDetails = memoryMode === "cache"
     ? `L1 I ${config.iCacheSize} · D ${config.dCacheSize}<br>Hit ${config.cacheLatency} cycles · RAM ${config.memoryLatency} cycles`
     : `Direct memory · I ${config.instructionMemoryLatency} · Read ${config.dataReadLatency} · Write ${config.dataWriteLatency} cycles`;
+  const predictorName = {
+    ideal: "Ideal (teaching baseline)",
+    local: "Local counter (2-bit baseline)",
+    tournament: "Tournament (local + global)",
+    bimode: "Bi-mode", tage: "TAGE (tagged hybrid)"
+  }[config.branchPredictor] || "Ideal (teaching baseline)";
   const details = (o3
-    ? `${config.speculativeExecution ? "speculation on" : "speculation off"} · ${config.outOfOrderExecution !== false ? "out-of-order execution" : "in-order execution"}<br>Predictor: ${{ideal: "Ideal (perfect prediction)", local: "Local two-bit", tournament: "Tournament", bimode: "Bi-mode", tage: "TAGE"}[config.branchPredictor] || "Local two-bit"}<br>In-order issue ${config.dispatchWidth} · EXE issue ${config.issueWidth}<br>CDB ${config.writebackWidth} · Commit ${config.commitWidth}<br>ROB ${config.robEntries} · RS/IQ ${config.iqEntries}<br>LQ ${config.lqEntries} · SQ ${config.sqEntries}`
+    ? `Out-of-order execution · speculation on<br>Predictor: ${predictorName}<br>Fetch ${config.fetchWidth} · Decode ${config.decodeWidth} · Rename ${config.renameWidth}<br>Issue ${config.dispatchWidth} · branches/jumps issue alone<br>CDB ${config.writebackWidth} · Commit ${config.commitWidth}<br>EXE: Int ALU ${config.intAluUnits || 1} · Mul ${config.intMulUnits || 1} · Div ${config.intDivUnits || 1}<br>FP ALU ${config.floatAluUnits || 1} · Mul ${config.floatMulUnits || 1} · Div ${config.floatDivUnits || 1}<br>Shared load/store units: ${config.memoryUnits || 1}<br>ROB · RS/IQ · LQ · SQ: unlimited`
     : `Forwarding: ${config.forwarding ? "on" : "off"}<br>Out-of-order execution: ${config.outOfOrderExecution !== false ? "on" : "off"}`)
     + `<br>Floating point: ${config.floatingPointPrecision === "double" ? "double (64-bit)" : "single (32-bit)"}`
     + `<br>Compressed instructions: ${config.compressedInstructions ? "on" : "off"}`
     + `<br>${memoryDetails}`;
-  $("#pipeline-diagram").innerHTML = `<div class="diagram-title">${o3 ? "Multiple-issue processor with speculation" : "Five-stage pipeline (in-order fetch and issue)"}</div>${blocks}<div class="diagram-detail">${details}</div>`;
+  $("#pipeline-diagram").innerHTML = `<div class="diagram-title">${o3 ? "Superscalar" : "Five-Stage Pipeline (F/D/E/M/W)"}</div>${blocks}<div class="diagram-detail">${details}</div>`;
 }
 
 function memoryWatchStorageKey(projectName = current?.name) {
@@ -873,21 +1698,40 @@ function saveMemoryWatches() {
   if (key) localStorage.setItem(key, JSON.stringify(memoryWatches));
 }
 
+const MEMORY_ELEMENT_NAMES = {1: "byte", 2: "halfword", 4: "word", 8: "doubleword"};
+const MEMORY_ROWS_PER_SYMBOL = 256;
+
 function availableMemorySymbols() {
   const source = pipelineData?.dataSymbols?.length
     ? pipelineData.dataSymbols : (current?.dataSymbols || []);
-  return source.map(symbol => ({
-    ...symbol,
-    address: canonicalMemoryAddress(symbol.address),
-    size: Math.max(1, Number(symbol.size) || 4)
-  })).sort((left, right) => BigInt(left.address) < BigInt(right.address)
+  return source.map(symbol => {
+    const size = Math.max(1, Number(symbol.size) || 4);
+    let elementSize = Number(symbol.elementSize);
+    if (!MEMORY_ELEMENT_NAMES[elementSize]) elementSize = size % 4 === 0 ? 4 : 1;
+    if (size % elementSize) elementSize = 1;
+    return {
+      ...symbol,
+      address: canonicalMemoryAddress(symbol.address),
+      size,
+      elementSize,
+      elementCount: size / elementSize
+    };
+  }).sort((left, right) => BigInt(left.address) < BigInt(right.address)
     ? -1 : BigInt(left.address) > BigInt(right.address) ? 1 : 0);
 }
 
 function describeMemorySymbol(symbol) {
-  if (symbol.size === 4) return "1 word";
-  if (symbol.size % 4 === 0) return `${symbol.size / 4} words`;
-  return `${symbol.size} bytes`;
+  const unit = MEMORY_ELEMENT_NAMES[symbol.elementSize];
+  return `${symbol.elementCount} ${unit}${symbol.elementCount === 1 ? "" : "s"}`;
+}
+
+function memoryDisplayLayout(symbol, format) {
+  let elementSize = symbol.elementSize;
+  if (format === "float" && symbol.untypedStorage) {
+    const floatingBytes = pipelineData?.configuration?.floatingPointPrecision === "double" ? 8 : 4;
+    if (symbol.size % floatingBytes === 0) elementSize = floatingBytes;
+  }
+  return {elementSize, elementCount: symbol.size / elementSize};
 }
 
 function memorySymbolHue(symbol, symbols) {
@@ -934,6 +1778,68 @@ function renderMemoryMap() {
   }).join("");
 }
 
+function publishMemoryWindowState() {
+  if (!memoryWindowChannel) return;
+  const symbol = $("#memory-symbol");
+  memoryWindowChannel.postMessage({
+    type: "memory-state",
+    project: current?.name || "",
+    theme: document.documentElement.dataset.theme,
+    symbolOptionsHtml: symbol.innerHTML,
+    symbolValue: symbol.value,
+    symbolDisabled: symbol.disabled,
+    addDisabled: $("#memory-symbol-form button").disabled,
+    clearDisabled: $("#memory-watch-clear").disabled,
+    format: $("#memory-format").value,
+    watchesHtml: $("#memory-watch-list").innerHTML,
+    summary: $("#memory-summary").textContent,
+    tableHtml: $("#memory-table").innerHTML,
+    mapHtml: $("#memory-map-sections").innerHTML
+  });
+}
+
+function addMemoryWatch(name) {
+  if (!current || !name) return;
+  if (!availableMemorySymbols().some(symbol => symbol.name === name)) return;
+  if (!memoryWatches.some(watch => watch.type === "symbol" && watch.name === name)) {
+    memoryWatches.push({type: "symbol", name});
+    saveMemoryWatches();
+  }
+  renderMemory();
+}
+
+function removeMemoryWatch(index) {
+  const selected = Number(index);
+  if (!Number.isInteger(selected) || selected < 0 || selected >= memoryWatches.length) return;
+  memoryWatches.splice(selected, 1);
+  saveMemoryWatches();
+  renderMemory();
+}
+
+function clearMemoryWatches() {
+  memoryWatches = [];
+  saveMemoryWatches();
+  renderMemory();
+}
+
+function setMemoryFormat(value) {
+  const formats = new Set(["hex", "binary", "signed", "unsigned", "float"]);
+  if (!formats.has(value)) return;
+  $("#memory-format").value = value;
+  localStorage.setItem("ase-studio-memory-format", value);
+  renderMemory();
+}
+
+async function openMemoryWindow() {
+  memoryPopoutWindow = window.open(
+    "memory-window.html", "ase-studio-memory", "popup,width=1050,height=720");
+  if (!memoryPopoutWindow) {
+    await showActionMessage("Open memory window", "The separate memory window was blocked.");
+    return;
+  }
+  memoryPopoutWindow.focus();
+}
+
 function renderMemory() {
   const table = $("#memory-table");
   const symbols = availableMemorySymbols();
@@ -944,68 +1850,245 @@ function renderMemory() {
       ? "Run a trace to inspect the watched memory locations."
       : "Add a variable or vector to the watch list.";
     table.innerHTML = '<div class="memory-empty">Memory values appear here after a successful run.</div>';
+    publishMemoryWindowState();
     return;
   }
 
-  const state = {...(pipelineData.initialMemory || current?.initialMemory || {})};
-  const changed = new Set();
+  // Replay memory one byte at a time so byte and halfword stores change only
+  // the bytes they write; each watched element is then rebuilt from bytes.
+  const initialRanges = Object.entries(pipelineData.initialMemory || current?.initialMemory || {})
+    .filter(([, hex]) => typeof hex === "string")
+    .map(([address, hex]) => ({start: Number(BigInt(address)), hex}));
+  const accessed = new Map();
   const deltas = pipelineData.memoryDeltas || {};
   for (let cycle = 1; cycle <= playbackCycle; cycle++) {
     const update = deltas[String(cycle)];
     if (!update) continue;
     Object.entries(update).forEach(([address, event]) => {
-      const canonical = canonicalMemoryAddress(address);
-      state[canonical] = event;
-      if (cycle === playbackCycle) changed.add(canonical);
+      const start = Number(BigInt(address));
+      const width = Math.max(1, Math.floor((Number(event.bits) || 32) / 8));
+      let bits = null;
+      try {
+        bits = BigInt(event.value);
+      } catch (_error) {
+        bits = null;
+      }
+      for (let offset = 0; offset < width; offset++) {
+        const previous = accessed.get(start + offset);
+        accessed.set(start + offset, {
+          value: bits === null ? (previous?.value ?? null) : Number((bits >> BigInt(8 * offset)) & 0xffn),
+          access: event.access,
+          cycle
+        });
+      }
     });
   }
+  const byteAt = address => {
+    const value = accessed.get(address)?.value;
+    if (value !== null && value !== undefined) return value;
+    const range = initialRanges.find(candidate =>
+      address >= candidate.start && address < candidate.start + candidate.hex.length / 2);
+    if (!range) return null;
+    const offset = (address - range.start) * 2;
+    return Number.parseInt(range.hex.slice(offset, offset + 2), 16);
+  };
 
   if (!memoryWatches.length) {
     $("#memory-summary").textContent = `Memory watch through cycle ${playbackCycle}`;
     table.innerHTML = '<div class="memory-empty">The watch list is empty. Add a variable or vector above.</div>';
+    publishMemoryWindowState();
     return;
   }
 
-  const symbolFor = address => {
-    const numeric = BigInt(address);
-    const containing = symbols.find(symbol => {
-      const start = BigInt(symbol.address);
-      return numeric >= start && numeric < start + BigInt(symbol.size);
-    });
-    if (!containing) return {label: address, symbol: null};
-    const offset = numeric - BigInt(containing.address);
-    if (containing.size > 4 && offset % 4n === 0n) {
-      return {label: `${containing.name}[${offset / 4n}]`, symbol: containing};
-    }
-    return {
-      label: offset ? `${containing.name}+0x${offset.toString(16)}` : containing.name,
-      symbol: containing
-    };
-  };
-
-  const addresses = new Set();
+  const format = $("#memory-format").value;
+  const rows = [];
+  let truncated = false;
   memoryWatches.forEach(watch => {
     const symbol = symbols.find(candidate => candidate.name === watch.name);
     if (!symbol) return;
-    const start = BigInt(symbol.address);
-    const end = start + BigInt(symbol.size);
-    addresses.add(symbol.address);
-    Object.keys(state).forEach(address => {
-      const numeric = BigInt(address);
-      if (numeric >= start && numeric < end) addresses.add(address);
-    });
+    const start = Number(BigInt(symbol.address));
+    const layout = memoryDisplayLayout(symbol, format);
+    const shown = Math.min(layout.elementCount, MEMORY_ROWS_PER_SYMBOL);
+    truncated ||= shown < layout.elementCount;
+    for (let index = 0; index < shown; index++) {
+      const address = start + index * layout.elementSize;
+      let value = 0n;
+      let known = true;
+      let latest = null;
+      // RISC-V is little-endian: the highest address holds the most significant byte.
+      for (let offset = layout.elementSize - 1; offset >= 0; offset--) {
+        const byte = byteAt(address + offset);
+        if (byte === null) known = false;
+        else value = (value << 8n) | BigInt(byte);
+        const event = accessed.get(address + offset);
+        if (event && (!latest || event.cycle > latest.cycle)) latest = event;
+      }
+      const width = layout.elementSize * 8;
+      // Floating-point views only exist for single and double precision.
+      const elementFormat = format === "float" && width < 32 ? "hex" : format;
+      rows.push({
+        address,
+        width: layout.elementSize,
+        symbol,
+        label: layout.elementCount > 1 ? `${symbol.name}[${index}]` : symbol.name,
+        access: latest ? latest.access : known ? "initial value" : "not accessed",
+        value: known ? formatWordValue(value, elementFormat, width) : "—",
+        changed: latest?.cycle === playbackCycle
+      });
+    }
   });
-  const ordered = [...addresses].sort((left, right) =>
-    BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0);
-  $("#memory-summary").textContent = `Memory watch through cycle ${playbackCycle} · ${ordered.length} location${ordered.length === 1 ? "" : "s"}`;
-  table.innerHTML = ordered.length ? ordered.map(address => {
-    const event = state[address];
-    const description = symbolFor(address);
-    const color = description.symbol ? " memory-symbol-color" : "";
-    const style = description.symbol ? ` style="--memory-symbol-hue:${memorySymbolHue(description.symbol, symbols)}deg"` : "";
-    const value = event ? formatWordValue(event.value, $("#memory-format").value, Number(event.bits) || 32) : "—";
-    return `<div class="memory-value${color}${changed.has(address) ? " changed" : ""}"${style}><strong class="memory-symbol-name">${escapeHtml(description.label)}</strong><span class="memory-address">${address}</span><span>${event ? event.access : "not accessed"}</span><code>${value}</code></div>`;
+  rows.sort((left, right) => left.address - right.address);
+  const limitNote = truncated ? ` · first ${MEMORY_ROWS_PER_SYMBOL} elements per vector` : "";
+  $("#memory-summary").textContent = `Memory watch through cycle ${playbackCycle} · ${rows.length} location${rows.length === 1 ? "" : "s"}${limitNote}`;
+  table.innerHTML = rows.length ? rows.map(row => {
+    const style = ` style="--memory-symbol-hue:${memorySymbolHue(row.symbol, symbols)}deg"`;
+    return `<div class="memory-value memory-symbol-color${row.changed ? " changed" : ""}" data-memory-address="0x${row.address.toString(16)}" data-memory-width="${row.width}" data-memory-label="${escapeHtml(row.label)}"${style}><strong class="memory-symbol-name">${escapeHtml(row.label)}</strong><span class="memory-address">0x${row.address.toString(16)}</span><span>${row.access}</span><code>${row.value}</code></div>`;
   }).join("") : '<div class="memory-empty">No matching memory locations were found in this build.</div>';
+  publishMemoryWindowState();
+}
+
+function closeChangeContextMenu() {
+  changeContextMenu?.remove();
+  changeContextMenu = null;
+}
+
+function openChangeContextMenu(event, item) {
+  closeChangeContextMenu();
+  event.preventDefault();
+  const menu = document.createElement("div");
+  menu.className = "change-context-menu";
+  menu.setAttribute("role", "menu");
+  [
+    ["next", "Go to next change"],
+    ["previous", "Go to previous change"]
+  ].forEach(([direction, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    button.textContent = label;
+    button.onclick = () => {
+      closeChangeContextMenu();
+      navigateToItemChange(item, direction);
+    };
+    menu.append(button);
+  });
+  document.body.append(menu);
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - bounds.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - bounds.height - 8))}px`;
+  changeContextMenu = menu;
+  menu.querySelector("button")?.focus();
+}
+
+function sameTraceValue(left, right) {
+  try {
+    return BigInt(left) === BigInt(right);
+  } catch (_error) {
+    return String(left) === String(right);
+  }
+}
+
+function registerChangeCycles(register) {
+  const deltas = pipelineData?.registerDeltas || {};
+  const initial = pipelineData?.initialRegisters || {};
+  let previous = initial[register] ?? "0x00000000";
+  const changes = [];
+  Object.keys(deltas).map(Number).sort((left, right) => left - right).forEach(cycle => {
+    const update = deltas[String(cycle)];
+    if (!Object.prototype.hasOwnProperty.call(update, register)) return;
+    const value = update[register];
+    if (!sameTraceValue(previous, value)) changes.push(cycle);
+    previous = value;
+  });
+  return changes;
+}
+
+function memoryChangeCycles(address, width) {
+  const start = Number(BigInt(canonicalMemoryAddress(address)));
+  const byteCount = Math.max(1, Math.floor(Number(width) || 1));
+  const bytes = Array(byteCount).fill(null);
+  const initialMemory = pipelineData?.initialMemory || current?.initialMemory || {};
+  Object.entries(initialMemory).forEach(([baseText, hex]) => {
+    if (typeof hex !== "string") return;
+    const base = Number(BigInt(baseText));
+    const first = Math.max(start, base);
+    const last = Math.min(start + byteCount, base + Math.floor(hex.length / 2));
+    for (let location = first; location < last; location++) {
+      const offset = (location - base) * 2;
+      const byte = Number.parseInt(hex.slice(offset, offset + 2), 16);
+      if (Number.isFinite(byte)) bytes[location - start] = byte;
+    }
+  });
+
+  const deltas = pipelineData?.memoryDeltas || {};
+  const changes = [];
+  Object.keys(deltas).map(Number).sort((left, right) => left - right).forEach(cycle => {
+    const before = bytes.slice();
+    Object.entries(deltas[String(cycle)] || {}).forEach(([eventAddress, event]) => {
+      if (event.access !== "write") return;
+      let value;
+      try {
+        value = BigInt(event.value);
+      } catch (_error) {
+        return;
+      }
+      const eventStart = Number(BigInt(eventAddress));
+      const eventWidth = Math.max(1, Math.floor((Number(event.bits) || 32) / 8));
+      const first = Math.max(start, eventStart);
+      const last = Math.min(start + byteCount, eventStart + eventWidth);
+      for (let location = first; location < last; location++) {
+        const offset = location - eventStart;
+        bytes[location - start] = Number((value >> BigInt(offset * 8)) & 0xffn);
+      }
+    });
+    if (bytes.some((value, index) => value !== before[index])) changes.push(cycle);
+  });
+  return changes;
+}
+
+async function navigateToItemChange(item, direction) {
+  const label = item.label || item.key;
+  const action = direction === "previous" ? "Go to previous change" : "Go to next change";
+  if (!stepMode || !pipelineData || playbackCycle === null) {
+    await showActionMessage(action, `${action} is available after starting Run Step.`);
+    return;
+  }
+
+  let changes = [];
+  try {
+    changes = item.kind === "register"
+      ? registerChangeCycles(item.key)
+      : memoryChangeCycles(item.key, item.width);
+  } catch (_error) {
+    changes = [];
+  }
+  const target = direction === "previous"
+    ? [...changes].reverse().find(cycle => cycle < playbackCycle)
+    : changes.find(cycle => cycle > playbackCycle);
+  if (target === undefined) {
+    await showActionMessage(action, `No ${direction === "previous" ? "previous" : "next"} value change for ${label} was found in this trace.`);
+    return;
+  }
+  navigateToPipelineCycle(target);
+}
+
+function navigateToPipelineCycle(cycle) {
+  playbackCycle = cycle;
+  selectedColumn = cycle;
+  $("#step").textContent = playbackCycle >= pipelineData.cycles
+    ? "Restart Step" : "Next Cycle";
+  renderPipeline();
+  showTab("pipeline");
+  positionPipelineCycle(cycle);
+  const eventRow = displayedPipelineRows().findIndex(row =>
+    row.cycles?.[String(cycle)] !== undefined);
+  if (eventRow >= 0) {
+    requestAnimationFrame(() => {
+      const instruction = $("#pipeline-grid")
+        .querySelector(`.cell.inst[data-row="${eventRow}"]`);
+      if (instruction) pipelineSelectTarget?.(instruction);
+    });
+  }
 }
 
 function expandedLoopView() {
@@ -1023,11 +2106,14 @@ function pipelineRowBounds(row) {
 }
 
 function jumpsForPipelineRow(row, lastVisibleCycle, expanded = expandedLoopView()) {
+  if (row.squashed) return [];
   let jumps = (pipelineData.jumps || []).filter(jump =>
     jump.fromAddress === row.address && jump.cycle <= lastVisibleCycle);
   if (expanded) {
     const bounds = pipelineRowBounds(row);
-    jumps = jumps.filter(jump => bounds.first <= jump.cycle && jump.cycle <= bounds.last);
+    jumps = jumps.filter(jump => jump.instructionSequence != null && row.sequence != null
+      ? jump.instructionSequence === row.sequence
+      : bounds.first <= jump.cycle && jump.cycle <= bounds.last);
   }
   const grouped = new Map();
   jumps.forEach(jump => {
@@ -1070,7 +2156,38 @@ function jumpTargetRow(rows, address, afterCycle = 0) {
   return fallback;
 }
 
+function pipelineStageTokens(stage) {
+  return stage.match(/[A-Z]\*?/g) || [];
+}
+
+function pipelineStageLabel(stage, o3) {
+  const tokens = pipelineStageTokens(stage);
+  if (o3) {
+    return tokens.map(token =>
+      ({C: "CDB", W: "C"}[token[0]] || token[0]) + token.slice(1)).join("/");
+  }
+  return tokens.length > 1 ? tokens.join("/") : stage;
+}
+
+function pipelineDisplayCycles(data = pipelineData) {
+  if (!data) return [];
+  const hidden = new Set(data.collapsedRecoveryCycles || []);
+  const cycles = [];
+  for (let cycle = 1; cycle <= data.cycles; cycle++) {
+    if (!hidden.has(cycle)) cycles.push(cycle);
+  }
+  return cycles;
+}
+
 function renderPipeline() {
+  if (pipelinePaintFrame !== null) {
+    cancelAnimationFrame(pipelinePaintFrame);
+    pipelinePaintFrame = null;
+  }
+  if (pipelineResizeObserver) {
+    pipelineResizeObserver.disconnect();
+    pipelineResizeObserver = null;
+  }
   const data = pipelineData;
   if (!data) {
     $("#pipeline-grid").innerHTML = "";
@@ -1083,6 +2200,8 @@ function renderPipeline() {
     return;
   }
   const displayRows = displayedPipelineRows();
+  const displayCycles = pipelineDisplayCycles(data);
+  const columnCount = displayCycles.length;
   const dynamicRows = (data.dynamicInstructions?.length ? data.dynamicInstructions : data.instructions)
     .filter(row => !row.squashed);
   const cellWidth = Number($("#cell-width").value);
@@ -1090,8 +2209,8 @@ function renderPipeline() {
   const addressWidth = 88;
   const instructionWidth = window.innerWidth <= 700 ? 150 : 182;
   const flowWidth = window.innerWidth <= 700 ? 132 : 140;
-  const columns = `${addressWidth}px ${instructionWidth}px ${flowWidth}px repeat(${data.cycles}, ${cellWidth}px)`;
-  const totalWidth = addressWidth + instructionWidth + flowWidth + data.cycles * cellWidth;
+  const frozenWidth = addressWidth + instructionWidth + flowWidth;
+  const totalWidth = addressWidth + instructionWidth + flowWidth + columnCount * cellWidth;
   const grid = $("#pipeline-grid");
   const scroll = $("#pipeline-scroll");
   const savedLeft = scroll.scrollLeft;
@@ -1112,28 +2231,57 @@ function renderPipeline() {
   $("#pipeline-summary").textContent = `${instructionCount} instructions · ${codeBytes} bytes pipeline code${predictionSummary} · CPI ${cpi}`;
   updateCycleNavigation();
   grid.style.width = totalWidth + "px";
-
-  let header = `<div class="pipeline-header" style="grid-template-columns:${columns};width:${totalWidth}px">`;
-  header += '<div class="cell address-cell head corner">PC Address</div>';
-  header += '<div class="cell inst head corner">Instruction</div>';
-  header += '<div class="cell flow-cell head corner" title="Control-flow transfers, prediction misses, and cache misses">Control / cache</div>';
-  for (let cycle = 1; cycle <= data.cycles; cycle++) {
-    header += `<div class="cell head ${selectedColumn === cycle ? "column-selected" : ""}${cycle > visibleCycle ? " future" : ""}" data-col="${cycle}">${cycle}</div>`;
-  }
-  header += `</div><div class="pipeline-rows" style="height:${displayRows.length * rowHeight}px;width:${totalWidth}px"></div>`;
-  grid.innerHTML = header;
+  grid.innerHTML = `<div class="pipeline-header" style="width:${totalWidth}px"></div><div class="pipeline-rows" style="height:${displayRows.length * rowHeight}px;width:${totalWidth}px"></div>`;
+  const header = grid.querySelector(".pipeline-header");
   const rows = grid.querySelector(".pipeline-rows");
+  const cycleOverscan = 8;
+  let paintedFirstRow = -1;
+  let paintedLastRow = -1;
+  let paintedFirstCycle = -1;
+  let paintedLastCycle = -1;
+  let forceNextPaint = false;
 
-  function paintRows() {
-    const visibleTop = Math.max(0, scroll.scrollTop - rowHeight);
-    const first = Math.max(0, Math.floor(visibleTop / rowHeight) - 6);
-    const visibleCount = Math.ceil(scroll.clientHeight / rowHeight) + 14;
-    const last = Math.min(displayRows.length, first + visibleCount);
+  function visibleCycleWindow() {
+    const cycleViewportWidth = Math.max(
+      cellWidth, scroll.clientWidth - frozenWidth);
+    const firstVisible = Math.max(
+      1, Math.floor(scroll.scrollLeft / cellWidth) + 1);
+    const lastVisible = Math.min(
+      columnCount,
+      Math.ceil((scroll.scrollLeft + cycleViewportWidth) / cellWidth));
+    return {
+      first: Math.max(1, firstVisible - cycleOverscan),
+      last: Math.min(columnCount, lastVisible + cycleOverscan)
+    };
+  }
+
+  function virtualColumns(firstCycle, lastCycle) {
+    const beforeWidth = (firstCycle - 1) * cellWidth;
+    const cycleCount = Math.max(0, lastCycle - firstCycle + 1);
+    const afterWidth = Math.max(0, columnCount - lastCycle) * cellWidth;
+    return `${addressWidth}px ${instructionWidth}px ${flowWidth}px ${beforeWidth}px repeat(${cycleCount}, ${cellWidth}px) ${afterWidth}px`;
+  }
+
+  function paintHeader(firstCycle, lastCycle, columns) {
+    let html = '<div class="cell address-cell head corner">PC Address</div>';
+    html += '<div class="cell inst head corner">Instruction</div>';
+    html += '<div class="cell flow-cell head corner" title="Control-flow transfers, prediction misses, and cache misses">Control / cache</div>';
+    html += '<div class="pipeline-cycle-spacer" aria-hidden="true"></div>';
+    for (let column = firstCycle; column <= lastCycle; column++) {
+      const cycle = displayCycles[column - 1];
+      html += `<div class="cell head ${selectedColumn === cycle ? "column-selected" : ""}${cycle > visibleCycle ? " future" : ""}" data-col="${cycle}">${cycle}</div>`;
+    }
+    html += '<div class="pipeline-cycle-spacer" aria-hidden="true"></div>';
+    header.style.gridTemplateColumns = columns;
+    header.innerHTML = html;
+  }
+
+  function paintRows(first, last, firstCycle, lastCycle, columns) {
     let html = "";
 
     for (let rowIndex = first; rowIndex < last; rowIndex++) {
       const row = displayRows[rowIndex];
-      html += `<div class="pipeline-row ${selectedRow === rowIndex ? "row-selected" : ""}" style="top:${rowIndex * rowHeight}px;grid-template-columns:${columns};width:${totalWidth}px">`;
+      html += `<div class="pipeline-row ${selectedRow === rowIndex ? "row-selected" : ""}${row.squashed ? " wrong-path" : ""}" style="top:${rowIndex * rowHeight}px;grid-template-columns:${columns};width:${totalWidth}px">`;
       const iterationText = row.iterations > 1 ? ` · ${row.iterations} iterations` : "";
       const address = row.address ? `0x${escapeHtml(row.address)}` : "—";
       html += `<div class="cell address-cell" data-row="${rowIndex}" title="Program counter">${address}</div>`;
@@ -1157,17 +2305,59 @@ function renderPipeline() {
       const predictionEvent = predictionMisses
         ? `<span class="branch-miss">BP miss${predictionMisses > 1 ? ` ×${predictionMisses}` : ""}</span>`
         : "";
-      html += `<div class="cell flow-cell" data-row="${rowIndex}">${jumpLinks}${predictionEvent}${cacheEvents}</div>`;
-      for (let cycle = 1; cycle <= data.cycles; cycle++) {
+      const squashEvent = row.squashed
+        ? `<span class="squash-label" title="Wrong-path instruction discarded after a branch misprediction">Squashed</span>`
+        : "";
+      html += `<div class="cell flow-cell" data-row="${rowIndex}">${jumpLinks}${predictionEvent}${cacheEvents}${squashEvent}</div>`;
+      html += '<div class="pipeline-cycle-spacer" aria-hidden="true"></div>';
+      for (let column = firstCycle; column <= lastCycle; column++) {
+        const cycle = displayCycles[column - 1];
         const stage = row.cycles[cycle] || "";
-        const label = stage.length > 1 && stage !== "S" ? stage.split("").join("/") : stage;
-        const stageClass = stage ? "stage-" + stage.slice(-1) : "";
+        const label = pipelineStageLabel(stage, pipelineData.format === "o3");
+        const tokens = pipelineStageTokens(stage);
+        const stageClass = tokens.length ? "stage-" + tokens.at(-1)[0] : "";
+        const squashedClass = stage.includes("*") ? " squashed-stage" : "";
         const columnClass = selectedColumn === cycle ? " column-selected" : "";
-        html += `<div class="cell ${stageClass}${columnClass}${cycle > visibleCycle ? " future" : ""}" data-row="${rowIndex}" data-col="${cycle}" data-stage="${stage}">${label}</div>`;
+        html += `<div class="cell ${stageClass}${squashedClass}${columnClass}${cycle > visibleCycle ? " future" : ""}" data-row="${rowIndex}" data-col="${cycle}" data-stage="${stage}">${label}</div>`;
       }
+      html += '<div class="pipeline-cycle-spacer" aria-hidden="true"></div>';
       html += "</div>";
     }
     rows.innerHTML = html;
+  }
+
+  function paintViewport(force = false) {
+    const visibleTop = Math.max(0, scroll.scrollTop - rowHeight);
+    const firstRow = Math.max(0, Math.floor(visibleTop / rowHeight) - 6);
+    const visibleRowCount = Math.ceil(scroll.clientHeight / rowHeight) + 14;
+    const lastRow = Math.min(displayRows.length, firstRow + visibleRowCount);
+    const cycleWindow = visibleCycleWindow();
+    const rowsChanged = firstRow !== paintedFirstRow || lastRow !== paintedLastRow;
+    const cyclesChanged = cycleWindow.first !== paintedFirstCycle
+      || cycleWindow.last !== paintedLastCycle;
+    if (!force && !rowsChanged && !cyclesChanged) return;
+    const columns = virtualColumns(cycleWindow.first, cycleWindow.last);
+    if (force || cyclesChanged) {
+      paintHeader(cycleWindow.first, cycleWindow.last, columns);
+    }
+    if (force || rowsChanged || cyclesChanged) {
+      paintRows(firstRow, lastRow, cycleWindow.first, cycleWindow.last, columns);
+    }
+    paintedFirstRow = firstRow;
+    paintedLastRow = lastRow;
+    paintedFirstCycle = cycleWindow.first;
+    paintedLastCycle = cycleWindow.last;
+  }
+
+  function schedulePaint(force = false) {
+    forceNextPaint ||= force;
+    if (pipelinePaintFrame !== null) return;
+    pipelinePaintFrame = requestAnimationFrame(() => {
+      pipelinePaintFrame = null;
+      const repaintAll = forceNextPaint;
+      forceNextPaint = false;
+      paintViewport(repaintAll);
+    });
   }
 
   grid.onmousemove = event => {
@@ -1188,8 +2378,10 @@ function renderPipeline() {
         S: pipelineData.format === "o3" ? "Wait in reservation station / ROB" : "Pipeline stall / wait",
         X: "Squashed after incorrect speculation"
       };
-      const stageName = stage.split("")
-        .map(marker => stageNames[marker] || marker).join(" / ");
+      const stageName = pipelineStageTokens(stage)
+        .map(token => (stageNames[token[0]] || token[0])
+          + (token.endsWith("*") ? " (wrong path; later squashed)" : ""))
+        .join(" / ");
       $("#detail").textContent = `Instruction: ${row.instruction} | Cycle: ${cell.dataset.col} | Stage: ${stageName} | Iterations: ${row.iterations}`;
     } else {
       $("#detail").textContent = `Clock cycle ${cell.dataset.col}`;
@@ -1205,7 +2397,7 @@ function renderPipeline() {
         selectedRow = targetRow;
         scroll.scrollTop = Math.max(0, targetRow * rowHeight - rowHeight * 2);
         highlightSourceLine(displayRows[targetRow].sourceLine);
-        paintRows();
+        paintViewport(true);
       }
       return;
     }
@@ -1216,10 +2408,7 @@ function renderPipeline() {
       highlightSourceLine(displayRows[selectedRow].sourceLine);
     }
     if (cell.dataset.col !== undefined) selectedColumn = Number(cell.dataset.col);
-    grid.querySelectorAll(".pipeline-header [data-col]").forEach(headerCell => {
-      headerCell.classList.toggle("column-selected", Number(headerCell.dataset.col) === selectedColumn);
-    });
-    paintRows();
+    paintViewport(true);
   };
   grid.onclick = null;
   grid.oncontextmenu = event => {
@@ -1228,10 +2417,17 @@ function renderPipeline() {
     pipelineSelectTarget(event.target);
   };
 
-  scroll.onscroll = paintRows;
+  scroll.onscroll = () => schedulePaint();
   scroll.scrollLeft = savedLeft;
   scroll.scrollTop = savedTop;
-  paintRows();
+  paintViewport(true);
+  if ("ResizeObserver" in window) {
+    pipelineResizeObserver = new ResizeObserver(() => schedulePaint(true));
+    pipelineResizeObserver.observe(scroll);
+  }
+  // renderPipeline can run while its tab is hidden. Recalculate once the
+  // browser has laid out the newly visible pipeline viewport.
+  schedulePaint(true);
   renderRegisters();
   renderPipelineDiagram();
   renderMemory();
@@ -1246,6 +2442,8 @@ function adjustCellWidth(delta) {
 function exportVisiblePipeline() {
   if (!pipelineData || !current) return;
   const lastCycle = playbackCycle === null ? pipelineData.cycles : playbackCycle;
+  const displayCycles = pipelineDisplayCycles(pipelineData)
+    .filter(cycle => cycle <= lastCycle);
   const quote = value => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const dynamicRows = (pipelineData.dynamicInstructions?.length
     ? pipelineData.dynamicInstructions : pipelineData.instructions)
@@ -1257,7 +2455,9 @@ function exportVisiblePipeline() {
     total + Number(row.mispredictions || (row.mispredicted ? 1 : 0)), 0);
   const cpi = instructionCount ? (pipelineData.cycles / instructionCount).toFixed(3) : "0";
   const headers = ["PC Address", "Instruction", "Control flow / cache"];
-  for (let cycle = 1; cycle <= lastCycle; cycle++) headers.push(`Cycle ${cycle}`);
+  for (const cycle of displayCycles) {
+    headers.push(`Cycle ${cycle}`);
+  }
   const rows = displayedPipelineRows().map(row => {
     const flow = [
       ...jumpsForPipelineRow(row, lastCycle).map(jump =>
@@ -1266,10 +2466,13 @@ function exportVisiblePipeline() {
         `${event.cache}$ ${event.result}${event.count > 1 ? ` x${event.count}` : ""}`),
       ...(Number(row.mispredictions || (row.mispredicted ? 1 : 0))
         ? [`BP miss${Number(row.mispredictions || 1) > 1 ? ` x${Number(row.mispredictions)}` : ""}`]
-        : [])
+        : []),
+      ...(pipelineData.format === "o3" && row.squashed ? ["Squashed"] : [])
     ].join("; ");
     const values = [row.address ? `0x${row.address}` : "", row.instruction, flow];
-    for (let cycle = 1; cycle <= lastCycle; cycle++) values.push(row.cycles[String(cycle)] || "");
+    for (const cycle of displayCycles) {
+      values.push(pipelineStageLabel(row.cycles[cycle] || "", pipelineData.format === "o3"));
+    }
     return values;
   });
   const summary = [
@@ -1295,22 +2498,102 @@ function exportVisiblePipeline() {
 function updateForwardingControl() {
   const outOfOrder = studioFeatures.multiIssueCpu
     && $("#cpu-model").value === "out-of-order";
+  const integerPanel = $("#integer-unit-settings");
+  const floatingPanel = $("#floating-unit-settings");
+  integerPanel.hidden = false;
+  floatingPanel.closest(".units-grid").classList.toggle("superscalar", outOfOrder);
+  integerPanel.querySelector("legend").textContent = outOfOrder
+    ? "Integer and load/store units · clock cycles" : "Integer unit · clock cycles";
+  floatingPanel.querySelector("legend").textContent = outOfOrder
+    ? "Floating-point units · clock cycles" : "Floating-point unit · clock cycles";
+  $("#o3-memory-units-field").hidden = !outOfOrder;
   $("#forwarding").disabled = outOfOrder;
   if (outOfOrder) $("#forwarding").checked = true;
   $("#forwarding-note").textContent = outOfOrder ? "(results use CDB/ROB forwarding)" : "";
   $("#o3-management").hidden = !outOfOrder;
+  $("#memory-management").hidden = !studioFeatures.memoryConfiguration;
+  $("#out-of-order-execution").closest("label").hidden = outOfOrder;
+  $("#out-of-order-execution").disabled = outOfOrder;
+  if (outOfOrder) {
+    $("#out-of-order-execution").checked = true;
+    $("#speculative-execution").checked = true;
+  }
 }
 
 function updateMemoryControls() {
   const mode = $("#memory-mode").value;
+  const available = studioFeatures.memoryConfiguration;
   const direct = mode === "direct";
   const cache = mode === "cache";
+  $("#memory-mode").disabled = !available;
   $("#direct-memory-fields").hidden = !direct;
   $("#cache-memory-fields").hidden = !cache;
   ["#instruction-memory-latency", "#data-read-latency", "#data-write-latency"]
-    .forEach(selector => { $(selector).disabled = !direct; });
+    .forEach(selector => { $(selector).disabled = !available || !direct; });
   ["#i-cache-size", "#d-cache-size", "#cache-line", "#cache-latency", "#memory-latency"]
-    .forEach(selector => { $(selector).disabled = !cache; });
+    .forEach(selector => { $(selector).disabled = !available || !cache; });
+}
+
+function updatePredictorControls() {
+  $("#o3-predictor-parameters").hidden = $("#cpu-model").value !== "out-of-order"
+    || $("#o3-branch-predictor").value === "ideal";
+}
+
+function openPredictorParameters() {
+  const predictor = $("#o3-branch-predictor").value;
+  if (!predictorFields[predictor]) return;
+  const parameters = predictorParameterDraft[predictor]
+    || o3Defaults.branchPredictorParameters?.[predictor] || {};
+  $("#predictor-title").textContent = predictorNames[predictor] + " parameters";
+  $("#predictor-fields").innerHTML = predictorFields[predictor].map(
+    ([key, label, minimum, maximum, help]) => {
+      const value = parameters[key];
+      const displayed = Array.isArray(value) ? value.join(", ") : value ?? "";
+      const kind = minimum === null ? "text" : "number";
+      const range = minimum === null ? "" : ` min="${minimum}" max="${maximum}" step="1"`;
+      return `<label class="${minimum === null ? "wide" : ""}">${escapeHtml(label)}<input name="${key}" type="${kind}" value="${escapeHtml(displayed)}"${range} required>${help ? `<small>${escapeHtml(help)}</small>` : ""}</label>`;
+    }).join("");
+  $("#predictor-dialog").showModal();
+}
+
+async function savePredictorParameters(event) {
+  event.preventDefault();
+  const predictor = $("#o3-branch-predictor").value;
+  const parameters = {};
+  for (const [key] of predictorFields[predictor]) {
+    const input = $("#predictor-form").elements.namedItem(key);
+    if (key === "tagTableTagWidths" || key === "logTagTableSizes") {
+      const parts = input.value.trim().split(/[\s,]+/);
+      parameters[key] = parts.map(Number);
+      if (parts.length !== 8 || parameters[key].some(number => !Number.isInteger(number))) {
+        await showActionMessage("Branch predictor parameters", `${key} needs eight comma-separated whole numbers.`);
+        return;
+      }
+    } else {
+      parameters[key] = Number(input.value);
+      if (!Number.isInteger(parameters[key])) {
+        await showActionMessage("Branch predictor parameters", `${key} must be a whole number.`);
+        return;
+      }
+    }
+  }
+  const powerOfTwo = number => number > 0 && Number.isInteger(Math.log2(number));
+  for (const key of ["localPredictorSize", "localHistoryTableSize", "globalPredictorSize", "choicePredictorSize", "BTBEntries"]) {
+    if (key in parameters && !powerOfTwo(parameters[key])) {
+      await showActionMessage("Branch predictor parameters", `${key} must be a power of two.`);
+      return;
+    }
+  }
+  if (predictor === "local" && !powerOfTwo(parameters.localPredictorSize / parameters.localCtrBits)) {
+    await showActionMessage("Branch predictor parameters", "Local storage divided by counter bits must give a power-of-two number of entries.");
+    return;
+  }
+  if (predictor === "tage" && parameters.maxHist <= parameters.minHist) {
+    await showActionMessage("Branch predictor parameters", "TAGE maximum history must exceed its minimum history.");
+    return;
+  }
+  predictorParameterDraft[predictor] = parameters;
+  $("#predictor-dialog").close();
 }
 
 async function openCpuConfiguration() {
@@ -1350,11 +2633,21 @@ async function openCpuConfiguration() {
     $("#issue-width").value = config.issueWidth;
     $("#writeback-width").value = config.writebackWidth;
     $("#commit-width").value = config.commitWidth;
+    $("#int-alu-units").value = config.intAluUnits || 1;
+    $("#int-mul-units").value = config.intMulUnits || 1;
+    $("#int-div-units").value = config.intDivUnits || 1;
+    $("#float-alu-units").value = config.floatAluUnits || 1;
+    $("#float-mul-units").value = config.floatMulUnits || 1;
+    $("#float-div-units").value = config.floatDivUnits || 1;
+    $("#memory-units").value = config.memoryUnits || 1;
     $("#rob-entries").value = config.robEntries;
     $("#iq-entries").value = config.iqEntries;
     $("#lq-entries").value = config.lqEntries;
     $("#sq-entries").value = config.sqEntries;
-    $("#branch-predictor").value = config.branchPredictor || "local";
+    $("#o3-branch-predictor").value = config.branchPredictor || "ideal";
+    predictorParameterDraft = JSON.parse(JSON.stringify(
+      config.branchPredictorParameters || o3Defaults.branchPredictorParameters || {}));
+    updatePredictorControls();
     $("#o3-evaluation-label").value = config.o3EvaluationLabel || "";
     $("#out-of-order-execution").checked = config.outOfOrderExecution !== false;
     $("#speculative-execution").checked = config.speculativeExecution !== false;
@@ -1371,6 +2664,8 @@ async function openCpuConfiguration() {
 }
 
 const environmentInputs = {
+  PROGRAMS_DIRECTORY: "#env-programs-directory",
+  SUBMISSION_DIRECTORY: "#env-submission-directory",
   RISCV_TOOLCHAIN_PATH: "#env-riscv-toolchain",
   OPTIMIZATION_FLAGS: "#env-optimization-flags",
   GEM5_INSTALLATION_PATH: "#env-gem5-installation",
@@ -1460,12 +2755,54 @@ function fillEnvironmentForm(settings) {
 
 async function openEnvironmentSettings() {
   try {
-    fillEnvironmentForm(await api("/api/environment"));
+    const settings = await api("/api/environment");
+    configuredProgramsDirectory = settings.values?.PROGRAMS_DIRECTORY || "";
+    fillEnvironmentForm(settings);
     $("#environment-dialog").showModal();
   } catch (error) {
     await showActionMessage("Settings", error.message);
   }
 }
+
+function clearCurrentProject() {
+  if (draftSaveTimer !== null) {
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = null;
+  }
+  current = null;
+  scaffoldProtectionEnabled = true;
+  scaffoldEditAuthorized = false;
+  updateScaffoldProtectionUi();
+  pipelineData = null;
+  memoryWatches = [];
+  savedSource = "";
+  sourceDirty = false;
+  updateDirtyIndicator();
+  setDraftStatus();
+  clearDiagnostics();
+  $("#project-title").textContent = "Open a project";
+  $("#source-name").textContent = "Assembly Editor";
+  sourceEditor.replaceDocument("", null);
+  renderRegisters();
+  renderMemory();
+  $("#save").disabled = true;
+  $("#duplicate").disabled = true;
+  $("#open-with").disabled = true;
+  $("#rename").disabled = true;
+  $("#submit").disabled = true;
+  $("#run").disabled = true;
+  $("#configure").disabled = true;
+  $("#delete").disabled = true;
+  $("#reset").disabled = true;
+  $("#export-pipeline").disabled = true;
+  $("#expand-loops").disabled = true;
+  $("#cycle-prev").disabled = true;
+  $("#cycle-next").disabled = true;
+  $("#cycle-position").textContent = "Cycle —/—";
+  $("#step").disabled = true;
+  updateCycleNavigation();
+}
+
 
 async function deleteCurrentProject() {
   if (!current) return;
@@ -1486,32 +2823,8 @@ async function deleteCurrentProject() {
       body: JSON.stringify({name, confirmation})
     });
     localStorage.removeItem(memoryWatchStorageKey(name));
-    current = null;
-    pipelineData = null;
-    memoryWatches = [];
-    savedSource = "";
-    sourceDirty = false;
-    updateDirtyIndicator();
-    $("#project-title").textContent = "Open a project";
-    $("#source-name").textContent = "Assembly Editor";
-    sourceEditor.replaceDocument("", null);
-    renderRegisters();
-    renderMemory();
-    $("#save").disabled = true;
-    $("#duplicate").disabled = true;
-    $("#open-with").disabled = true;
-    $("#rename").disabled = true;
-    $("#submit").disabled = true;
-    $("#run").disabled = true;
-    $("#configure").disabled = true;
-    $("#delete").disabled = true;
-    $("#reset").disabled = true;
-    $("#export-pipeline").disabled = true;
-    $("#expand-loops").disabled = true;
-    $("#cycle-prev").disabled = true;
-    $("#cycle-next").disabled = true;
-    $("#cycle-position").textContent = "Cycle —/—";
-    $("#step").disabled = true;
+    clearLocalDraft(name);
+    clearCurrentProject();
     lastNormalLog = `Deleted project ${name}. Generated results were kept.`;
     lastAdvancedLog = lastNormalLog;
     updateLog();
@@ -1545,10 +2858,7 @@ $("#float-register-format").onchange = event => {
   renderRegisters();
 };
 $("#memory-format").value = localStorage.getItem("ase-studio-memory-format") || "hex";
-$("#memory-format").onchange = event => {
-  localStorage.setItem("ase-studio-memory-format", event.target.value);
-  renderMemory();
-};
+$("#memory-format").onchange = event => setMemoryFormat(event.target.value);
 setEditorFontSize(localStorage.getItem("ase-studio-editor-font-size") || 14);
 $("#editor-font-size").oninput = event => setEditorFontSize(event.target.value);
 $("#theme-toggle").onclick = () => {
@@ -1556,6 +2866,7 @@ $("#theme-toggle").onclick = () => {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem("ase-studio-theme", theme);
   updateThemeButton();
+  publishMemoryWindowState();
 };
 updateThemeButton();
 $("#about-button").onclick = () => $("#about-dialog").showModal();
@@ -1598,33 +2909,52 @@ $("#message-dialog").addEventListener("cancel", event => {
   closeActionDialog(null);
 });
 document.querySelectorAll("#bottom nav button").forEach(button => button.onclick = () => showTab(button.dataset.tab));
+document.addEventListener("contextmenu", event => {
+  const register = event.target.closest("[data-register-change]");
+  if (register) {
+    openChangeContextMenu(event, {
+      kind: "register", key: register.dataset.registerChange,
+      label: register.dataset.registerChange
+    });
+    return;
+  }
+  const memory = event.target.closest("[data-memory-address]");
+  if (!memory) return;
+  openChangeContextMenu(event, {
+    kind: "memory", key: memory.dataset.memoryAddress,
+    width: Number(memory.dataset.memoryWidth),
+    label: memory.dataset.memoryLabel || memory.dataset.memoryAddress
+  });
+});
+document.addEventListener("pointerdown", event => {
+  if (changeContextMenu && !changeContextMenu.contains(event.target)) {
+    closeChangeContextMenu();
+  }
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") closeChangeContextMenu();
+});
+window.addEventListener("resize", closeChangeContextMenu);
 $("#memory-symbol-form").onsubmit = event => {
   event.preventDefault();
-  const name = $("#memory-symbol").value;
-  if (!current || !name) return;
-  if (!memoryWatches.some(watch => watch.type === "symbol" && watch.name === name)) {
-    memoryWatches.push({type: "symbol", name});
-    saveMemoryWatches();
-  }
-  renderMemory();
+  addMemoryWatch($("#memory-symbol").value);
 };
 $("#memory-watch-list").onclick = event => {
   const button = event.target.closest("[data-memory-watch-remove]");
   if (!button) return;
-  memoryWatches.splice(Number(button.dataset.memoryWatchRemove), 1);
-  saveMemoryWatches();
-  renderMemory();
+  removeMemoryWatch(button.dataset.memoryWatchRemove);
 };
-$("#memory-watch-clear").onclick = () => {
-  memoryWatches = [];
-  saveMemoryWatches();
-  renderMemory();
-};
+$("#memory-watch-clear").onclick = clearMemoryWatches;
+$("#memory-popout").onclick = openMemoryWindow;
 $("#cell-width").oninput = () => pipelineData && renderPipeline();
 $("#cell-smaller").onclick = () => adjustCellWidth(-6);
 $("#cell-larger").onclick = () => adjustCellWidth(6);
 $("#cycle-prev").onclick = () => movePlaybackCycle(-1);
 $("#cycle-next").onclick = () => movePlaybackCycle(1);
+$("#cycle-jump-form").onsubmit = event => {
+  event.preventDefault();
+  jumpToCycle();
+};
 $("#expand-loops").onchange = () => {
   selectedRow = null;
   if (pipelineData) renderPipeline();
@@ -1633,17 +2963,40 @@ $("#advanced-logs").onchange = updateLog;
 $("#cpu-model").onchange = () => {
   if (cpuConfigurationOpenedAs === "in-order"
       && $("#cpu-model").value === "out-of-order") {
-    $("#issue-width").value = 2;
-    $("#writeback-width").value = 2;
-    $("#commit-width").value = 2;
+    const defaultInputs = {
+      intAlu: "int-alu", intMul: "int-mul", intDiv: "int-div",
+      floatAlu: "float-alu", floatMul: "float-mul", floatDiv: "float-div",
+      fetchWidth: "fetch-width", decodeWidth: "decode-width",
+      renameWidth: "rename-width", dispatchWidth: "dispatch-width",
+      issueWidth: "issue-width",
+      writebackWidth: "writeback-width", commitWidth: "commit-width",
+      intAluUnits: "int-alu-units", intMulUnits: "int-mul-units",
+      intDivUnits: "int-div-units", floatAluUnits: "float-alu-units",
+      floatMulUnits: "float-mul-units", floatDivUnits: "float-div-units",
+      memoryUnits: "memory-units"
+    };
+    for (const [key, id] of Object.entries(defaultInputs)) {
+      if (o3Defaults[key] !== undefined) $("#" + id).value = o3Defaults[key];
+    }
+    for (const unit of ["int-alu", "int-mul", "int-div", "float-alu", "float-mul", "float-div"]) {
+      const key = unit.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()) + "Pipelined";
+      if (o3Defaults[key] !== undefined) $("#" + unit + "-pipelined").checked = o3Defaults[key];
+    }
     const defaultStages = new Set(["issue", "execute", "memory", "cdb", "commit"]);
+    $("#o3-branch-predictor").value = o3Defaults.branchPredictor || "ideal";
     document.querySelectorAll("[data-o3-stage]").forEach(input => {
       input.checked = defaultStages.has(input.dataset.o3Stage);
     });
     cpuConfigurationOpenedAs = "out-of-order";
   }
   updateForwardingControl();
+  updateMemoryControls();
+  updatePredictorControls();
 };
+$("#o3-branch-predictor").onchange = updatePredictorControls;
+$("#o3-predictor-parameters").onclick = openPredictorParameters;
+$("#cancel-predictor").onclick = () => $("#predictor-dialog").close();
+$("#predictor-form").onsubmit = savePredictorParameters;
 $("#memory-mode").onchange = updateMemoryControls;
 $("#cancel-submission").onclick = () => $("#submission-dialog").close();
 $("#submission-dialog").addEventListener("cancel", event => {
@@ -1720,11 +3073,20 @@ $("#cpu-form").onsubmit = async event => {
     issueWidth: Number($("#issue-width").value),
     writebackWidth: Number($("#writeback-width").value),
     commitWidth: Number($("#commit-width").value),
+    intAluUnits: Number($("#int-alu-units").value),
+    intMulUnits: Number($("#int-mul-units").value),
+    intDivUnits: Number($("#int-div-units").value),
+    floatAluUnits: Number($("#float-alu-units").value),
+    floatMulUnits: Number($("#float-mul-units").value),
+    floatDivUnits: Number($("#float-div-units").value),
+    memoryUnits: Number($("#memory-units").value),
     robEntries: Number($("#rob-entries").value),
     iqEntries: Number($("#iq-entries").value),
     lqEntries: Number($("#lq-entries").value),
     sqEntries: Number($("#sq-entries").value),
-    branchPredictor: $("#branch-predictor").value,
+    branchPredictor: $("#cpu-model").value === "out-of-order"
+      ? $("#o3-branch-predictor").value : "local",
+    branchPredictorParameters: predictorParameterDraft,
     speculativeExecution: $("#speculative-execution").checked,
     outOfOrderExecution: $("#out-of-order-execution").checked,
     o3EvaluationLabel: $("#o3-evaluation-label").value.trim(),
@@ -1737,6 +3099,8 @@ $("#cpu-form").onsubmit = async event => {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({name: current.name, config})
     });
+    const updatedProject = await api("/api/project?name=" + encodeURIComponent(current.name));
+    current.isa = updatedProject.isa || current.isa;
     $("#cpu-dialog").close();
     lastNormalLog = "CPU configuration saved. It will be used on the next Run.";
     lastAdvancedLog = lastNormalLog;
@@ -1759,15 +3123,26 @@ $("#environment-form").onsubmit = async event => {
     $("#env-pipeline-cycle-limit").focus();
     return;
   }
+  const programsDirectoryChanged = values.PROGRAMS_DIRECTORY.trim()
+    !== configuredProgramsDirectory.trim();
+  if (programsDirectoryChanged
+      && !await resolveUnsavedProject("change the programs folder")) return;
   try {
     const settings = await api("/api/environment", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({values})
     });
+    configuredProgramsDirectory = settings.values?.PROGRAMS_DIRECTORY || "";
     fillEnvironmentForm(settings);
     $("#environment-dialog").close();
-    lastNormalLog = "Settings saved. They will be used by the next build and simulation.";
+    if (programsDirectoryChanged) {
+      clearCurrentProject();
+      await loadProjects();
+    }
+    lastNormalLog = programsDirectoryChanged
+      ? `Settings saved. Projects are now loaded from ${configuredProgramsDirectory}.`
+      : "Settings saved. They will be used by the next build and simulation.";
     lastAdvancedLog = lastNormalLog;
     updateLog();
     showTab("output");
@@ -1811,13 +3186,25 @@ $("#update").onclick = async () => {
     lastAdvancedLog = result.advancedOutput || result.output;
     updateLog();
     if (result.restartRequired) {
+      // Files on disk now belong to the new release, but this page and Python
+      // process still execute the old release. Do not update again until the
+      // application has restarted.
+      $("#update").hidden = true;
+      $("#update").disabled = true;
+      $("#update").title = "Restart ASE Studio to finish the update.";
       await showActionMessage("Update completed",
         "Restart ASE Studio now to load the updated simulator and interface.");
+      return;
+    }
+    if (!result.ok) {
+      await showActionMessage("Update failed",
+        result.output || "ASE Studio could not complete the repository update.");
     }
   } catch (error) {
     lastNormalLog = `Repository update failed\n${error.message}`;
     lastAdvancedLog = lastNormalLog;
     updateLog();
+    await showActionMessage("Update failed", error.message);
   }
   await checkForUpdate();
 };
@@ -1837,6 +3224,7 @@ document.addEventListener("keydown", event => {
   }
 }, true);
 window.aseHasUnsavedChanges = () => sourceDirty;
+window.addEventListener("beforeunload", writeLocalDraft);
 
 const splitter = $("#splitter");
 splitter.addEventListener("pointerdown", event => {

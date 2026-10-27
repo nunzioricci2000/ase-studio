@@ -89,6 +89,12 @@ class ForkTests(unittest.TestCase):
         with patch.object(backend, 'ROOT', self.root), patch.object(backend, 'PROGRAMS', programs), patch.object(backend, 'configured_gem5_location', return_value={'executable':str(executable)}), patch.object(backend, 'git_run', side_effect=AssertionError('startup ran Git')):
             backend.validate_runtime_environment()
 
+    def test_first_run_invalid_tool_path_allows_settings_without_git(self):
+        (self.root / 'setup_default').touch()
+        with patch.object(backend, 'ROOT', self.root), patch.object(backend, 'configured_gem5_location', return_value={'error':'missing tool'}), patch.object(backend, 'git_run', side_effect=AssertionError('startup ran Git')), patch('sys.stderr') as stderr:
+            backend.validate_runtime_environment()
+            self.assertTrue(stderr.write.called)
+
     def test_blocked_update_does_not_mutate_git(self):
         with patch.object(backend, 'update_status', return_value={'available':True,'canUpdate':False,'message':'dirty'}), patch.object(backend, 'git_run', side_effect=AssertionError('blocked update ran Git')):
             self.assertFalse(backend.pull_update()['ok'])

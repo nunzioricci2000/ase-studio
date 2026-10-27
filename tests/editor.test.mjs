@@ -31,3 +31,12 @@ test('catalog has unique documented instructions and all register aliases', () =
   for (const item of instructions) assert.ok(item.description && item.extension);
   for (const name of ['x31','f31','fp','t6','ft11','s11','fs11','a7','fa7']) assert.ok(registers.find(r=>r.name===name));
 });
+
+// Upstream opcode operands use native Monaco snippet tab stops.
+test('upstream instruction snippets and active ISA filtering', async () => {
+  const {instructionSnippet, instructionEnabled} = await import('../frontend/editor/riscv.js');
+  assert.equal(instructionSnippet('addi'), 'addi ${1:x1}, ${2:x2}, ${3:0}');
+  assert.equal(instructionEnabled({extension:'D'}, ['i','f']), false);
+  assert.equal(instructionEnabled({extension:'F'}, ['i','f']), true);
+  assert.equal(instructionEnabled({extension:'Pseudo'}, ['i']), true);
+});
