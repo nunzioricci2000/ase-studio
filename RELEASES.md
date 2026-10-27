@@ -3,6 +3,7 @@
 <!-- Modified in the personal fork on 2026-10-28: retain frontend provenance without adding runtime assets. -->
 <!-- Modified in the personal fork on 2026-10-28: document portable startup and installed-runtime checks. -->
 <!-- Modified in the personal fork on 2026-10-28: exercise the native macOS window and preserve webview preferences. -->
+<!-- Modified in the personal fork on 2026-10-28: document collection of checksum-verified preferred dependency sources. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -96,3 +97,20 @@ Before distributing desktop packages, follow [DISTRIBUTION.md](DISTRIBUTION.md),
 verify the exact engine's runtime tests and include its matching sources, the
 frontend's preferred editable dependency sources, and all required notices.
 Assets with unresolved redistribution rights must be omitted from packages.
+
+Prepare the frontend's preferred dependency sources without rebuilding the engine:
+
+```sh
+python3 scripts/frontend-sources.py --output /tmp/studio-dependency-sources
+python3 scripts/frontend-sources.py --output /tmp/studio-dependency-sources --verify-only
+```
+
+Existing downloads are verified before reuse. A package-version mismatch,
+incorrect checksum, missing source/license, differing Monaco revision or changed
+font fails the collection. Keep all seven archives and `sources-manifest.json`
+with the exact Studio sources and engine source archive. A lockfile or generated
+JavaScript alone is insufficient. This collection is not an installable app.
+The Ubuntu Chromium job measures this collection, reuses checksum-verified
+downloads through Actions cache and uploads `studio-dependency-sources` for
+14 days. It is collected once per workflow, since the sources are common to
+all supported hosts. Each platform still builds and tests its own runtime.

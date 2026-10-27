@@ -1,0 +1,38 @@
+{
+  "monaco_version": "0.57.0",
+  "dompurify_version": "3.4.17",
+  "monaco_commit": "d61824269f1377111d34306e4a47172327777083",
+  "vscode_commit": "6a598d4a13031703d483d103c1d934a36ad27971",
+  "archives": [
+    {
+      "name": "monaco-preferred-source.tar.gz",
+      "url": "https://codeload.github.com/microsoft/monaco-editor/tar.gz/d61824269f1377111d34306e4a47172327777083",
+      "sha256": "fb2007b97ef288663e18af0c452e2a2441bce2e661dd9abaf4e3e0d5821c60e7",
+      "required": ["LICENSE.txt", "package.json", "build/build-monaco-editor.ts"]
+    },
+    {
+      "name": "vscode-core-preferred-source.tar.gz",
+      "url": "https://codeload.github.com/microsoft/vscode/tar.gz/6a598d4a13031703d483d103c1d934a36ad27971",
+      "sha256": "36fbeb48c7a7330eaa3c80441bcd587fefbe9fd4ba0046d78b0447f2783bd4e6",
+      "required": ["LICENSE.txt", "src/vs/editor/editor.api.ts", "src/vs/base/common/marked/marked.js"]
+    },
+    {
+      "name": "dompurify-preferred-source.tar.gz",
+      "url": "https://codeload.github.com/cure53/DOMPurify/tar.gz/a77a3e78b59f72fa4d1c83f22e121ad9cc7d3575",
+      "sha256": "76921c65f6644f294e51cd01cc16e403406a34a380b14da07a90109d976d85c6",
+      "required": ["LICENSE", "LICENSE-MPL", "src/purify.ts"]
+    },
+    {
+      "name": "codicons-source.tgz",
+      "url": "https://registry.npmjs.org/@vscode/codicons/-/codicons-0.0.46-40.tgz",
+      "sha256": "693fc6ae42289879e9bfa36f4651858d6e52c0595b23d278c0ef4e2716822a3c",
+      "required": ["LICENSE", "LICENSE-CODE", "src/icons/add.svg", "dist/codicon.ttf"]
+    },
+    {
+      "name": "marked-preferred-source.tar.gz",
+      "url": "https://codeload.github.com/markedjs/marked/tar.gz/7972d7f9b578a31b32f469c14fc97c39ceb2b6c6",
+      "sha256": "9d1a10377ab11e41d7139387b73b8e6c383918b3622ccc6e80c8c97cb3670e5c",
+      "required": ["LICENSE.md", "src/marked.ts", "package.json"]
+    }
+  ]
+}

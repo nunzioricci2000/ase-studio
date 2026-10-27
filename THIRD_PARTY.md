@@ -3,12 +3,14 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Created in the personal fork on 2026-10-27: document bundled licenses. -->
 <!-- Modified in the personal fork on 2026-10-28: identify exact frontend revisions and the separate Codicons font license. -->
+<!-- Modified in the personal fork on 2026-10-28: retain preferred Marked sources and verify dependency archives against pinned checksums. -->
 
 | Component | Version | License and included notices |
 | --- | --- | --- |
 | Monaco Editor | 0.57.0 | MIT; frontend/vendor/MONACO-LICENSE.txt and MONACO-ThirdPartyNotices.txt |
 | DOMPurify | 3.4.17 | Upstream offers MPL-2.0 OR Apache-2.0; MPL option used for this GPL combination; both texts retained in frontend/vendor/DOMPURIFY-LICENSE*.txt |
 | Codicons font | 0.0.46-40, font 1.15 | CC-BY-4.0; frontend/vendor/CODICONS-LICENSE.txt and CODICONS-NOTICE.txt |
+| Embedded Marked | 14.0.0 | MIT; retained in MONACO-ThirdPartyNotices.txt and generated legal comments |
 | Other Monaco bundled components | As shipped with Monaco | Preserve MONACO-ThirdPartyNotices.txt and all upstream notices |
 
 The unmodified Codicons font is a separate artwork asset under CC-BY-4.0, not
@@ -41,6 +43,14 @@ Monaco 0.57.0's package metadata identifies Monaco commit
 `6a598d4a13031703d483d103c1d934a36ad27971`; include both source trees for the
 preferred TypeScript sources and build recipes. DOMPurify 3.4.17 resolves to
 commit `a77a3e78b59f72fa4d1c83f22e121ad9cc7d3575`.
+The embedded Marked 14.0.0 parser is generated JavaScript; its preferred
+TypeScript sources are at commit `7972d7f9b578a31b32f469c14fc97c39ceb2b6c6`
+in [markedjs/marked](https://github.com/markedjs/marked/tree/7972d7f9b578a31b32f469c14fc97c39ceb2b6c6).
+`scripts/frontend-sources.py` collects these exact source trees, the Codicons
+editable SVG source package, and the two npm inputs used by the editor build.
+It verifies pinned SHA256/npm SHA512 checksums, expected source/license files,
+Monaco's source-revision metadata, and the font's exact bytes. Its lock must be
+reviewed whenever a bundled dependency is updated.
 
 The measured editor build's `frontend-inputs.json` records the actual import
 graph. It uses Monaco's editor/core, embedded MIT-licensed Marked, and the

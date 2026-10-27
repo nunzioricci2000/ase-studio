@@ -3,6 +3,7 @@
 # Created in the personal fork on 2026-10-27: timed Studio checks using disposable browser fixtures.
 # Modified in the personal fork on 2026-10-28: retain the exact frontend input graph with timing reports.
 # Modified in the personal fork on 2026-10-28: compile and exercise the native macOS webview on both architectures.
+# Modified in the personal fork on 2026-10-28: measure optional collection of corresponding frontend dependency sources.
 """Check the frontend without requiring or rebuilding the simulator SDK."""
 import argparse
 from datetime import datetime, timezone
@@ -104,12 +105,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--browser', choices=('chromium', 'webkitgtk'), default='chromium')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--dependency-sources', type=Path)
     args = parser.parse_args()
     report = Report(args.output.resolve(), args.browser)
     try:
         report.run('npm-install', ['npm', 'ci'])
         report.run('frontend-build', ['npm', 'run', 'build'],
                    env=dict(os.environ, ASE_FRONTEND_REPORT=str(report.output / 'frontend-inputs.json')))
+        if args.dependency_sources:
+            report.run('dependency-sources', [sys.executable, 'scripts/frontend-sources.py',
+                       '--output', str(args.dependency_sources.resolve())])
         report.run('backend', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v'])
         report.run('editor-unit', ['npm', 'test'])
         if args.browser == 'chromium':
