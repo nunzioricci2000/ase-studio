@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-10-28: version portable-runtime regression coverage.
 __pycache__/
 *.py[cod]
 node_modules/
@@ -7,3 +8,4 @@ node_modules/
 tests/*
 !tests/test_predictor_parameters.py
 !tests/test_fork.py
+!tests/test_packaged_runtime.py

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-27: preserve initial register snapshots and bind writes to completed instructions.
+# Modified in the personal fork on 2026-10-28: resolve packaged build/configuration resources outside persistent user data.
 """Small localhost-only backend for the experimental ASE Studio."""
 from __future__ import annotations
 
@@ -689,7 +690,9 @@ def settings_env():
     env["CC_INSTALLATION_PATH"] = str(compiler.parent) + os.sep
     env["GEM5_INSTALLATION_PATH"] = str(
         gem5_executable_path(env["GEM5_INSTALLATION_PATH"]))
-    env["ASE_STUDIO_DEMO_MK"] = str((PROGRAMS / "demo.mk").resolve())
+    demo = resolve_environment_path(env.get("ASE_STUDIO_DEMO_MK", str(PROGRAMS / "demo.mk")))
+    # GNU make's include directive treats unescaped spaces as filename separators.
+    env["ASE_STUDIO_DEMO_MK"] = str(demo).replace(" ", "\\ ")
     # ASE Studio supports the RISC-V optimized gem5 build. Keeping these
     # fixed avoids asking users for path components that are not choices in
     # this frontend.
@@ -1218,8 +1221,8 @@ def simulate(name):
             old_trace.unlink()
     in_order = cpu_config["cpu"] == "in-order"
     gem5 = Path(configured_path(env["GEM5_INSTALLATION_PATH"]))
-    config = (configured_path(env["GEM5_SIMULATION_SCRIPT"]) if in_order
-              else str(ROOT / "gem5" / "riscv_o3_custom.py"))
+    config = configured_path(env["GEM5_SIMULATION_SCRIPT"] if in_order else
+                             env.get("GEM5_O3_SIMULATION_SCRIPT", str(ROOT / "gem5" / "riscv_o3_custom.py")))
     latency_options = [
         "--ase-int-alu-latency", str(cpu_config["intAlu"]),
         "--ase-int-mul-latency", str(cpu_config["intMul"]),
