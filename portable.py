@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: launch a prebuilt SDK with persistent data outside the application.
+# Modified in the personal fork on 2026-10-28: keep a stable preferred port for webview preferences across launches.
 """Runtime entry point for packaged Studio; never fetch or build an engine."""
 import argparse
 import os
@@ -61,7 +62,7 @@ def main():
     parser = argparse.ArgumentParser(description='ASE Studio di Nunzio — packaged runtime')
     parser.add_argument('--engine', type=Path, default=STUDIO.parent / 'engine')
     parser.add_argument('--data', type=Path, default=default_data())
-    parser.add_argument('--port', type=int, default=0)
+    parser.add_argument('--port', type=int, default=os.environ.get('ASE_STUDIO_PORT', '8765'))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--server', action='store_true', help='Serve the native macOS webview')
     mode.add_argument('--browser', action='store_true', help='Open the interface in the system browser')

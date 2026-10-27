@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-27: timed Studio checks using disposable browser fixtures.
 # Modified in the personal fork on 2026-10-28: retain the exact frontend input graph with timing reports.
+# Modified in the personal fork on 2026-10-28: compile and exercise the native macOS webview on both architectures.
 """Check the frontend without requiring or rebuilding the simulator SDK."""
 import argparse
 from datetime import datetime, timezone
@@ -74,7 +75,7 @@ class Report:
         self.save()
 
 
-def webkit(report):
+def webview(report, name, command):
     env = dict(os.environ, ASE_TEST_SERVE_ONLY='1')
     log = (report.output / 'browser-harness.log').open('w')
     server = subprocess.Popen(['node', 'tests/browser.mjs'], cwd=ROOT, env=env,
@@ -87,7 +88,7 @@ def webkit(report):
             url = server.stdout.readline().strip()
         if not re.fullmatch(r'http://127\.0\.0\.1:\d+/harness', url):
             raise RuntimeError(f'Editor harness failed to start: {url!r}')
-        report.run('webkitgtk', ['xvfb-run', '-a', sys.executable, 'tests/webkit.py', url], timeout=90)
+        report.run(name, command + [url], timeout=120)
     finally:
         server.terminate()
         try:
@@ -116,7 +117,17 @@ def main():
                 report.run('browser-install', ['npx', '--no-install', 'playwright', 'install', 'chromium'])
             report.run('chromium', ['npm', 'run', 'test:browser'], timeout=120)
         else:
-            webkit(report)
+            webview(report, 'webkitgtk', ['xvfb-run', '-a', sys.executable, 'tests/webkit.py'])
+        if sys.platform == 'darwin':
+            # Keep the test executable outside uploaded diagnostics; desktop
+            # releases supply the launcher together with its complete sources.
+            executable = str(report.output.parent / 'studio-native-test')
+            report.run('native-macos-build', ['xcrun', 'swiftc', '-swift-version', '5', '-O',
+                       '-target', platform.machine() + '-apple-macosx15.0', '-framework', 'AppKit',
+                       '-framework', 'WebKit', '-framework', 'UniformTypeIdentifiers',
+                       'scripts/native-macos.swift', '-o', executable])
+            webview(report, 'webkit-macos', [executable, '--test-output',
+                    str(report.output / 'native-files'), '--test-url'])
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         report.finish('failed', error)
         print(error, file=sys.stderr)

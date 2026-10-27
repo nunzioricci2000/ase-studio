@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: test an installed Studio/SDK through its real HTTP API and disposable projects.
+# Modified in the personal fork on 2026-10-28: isolate test-server ports from existing desktop sessions.
 import argparse
 from datetime import datetime, timezone
 import json
@@ -58,7 +59,7 @@ def main():
                            LD_LIBRARY_PATH=str(engine / 'python/lib'),
                            DYLD_LIBRARY_PATH=str(engine / 'python/lib'))
             command = [str(args.python or sys.executable), str(studio / 'portable.py'), '--server',
-                       '--engine', str(engine), '--data', str(data)]
+                       '--engine', str(engine), '--data', str(data), '--port', '0']
             server = subprocess.Popen(command, env=env, cwd=directory, text=True,
                                       stdout=subprocess.PIPE, stderr=log, start_new_session=True)
             try:

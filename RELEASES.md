@@ -2,6 +2,7 @@
 <!-- Created in the personal fork on 2026-10-27: separate measured Studio checks from engine builds. -->
 <!-- Modified in the personal fork on 2026-10-28: retain frontend provenance without adding runtime assets. -->
 <!-- Modified in the personal fork on 2026-10-28: document portable startup and installed-runtime checks. -->
+<!-- Modified in the personal fork on 2026-10-28: exercise the native macOS window and preserve webview preferences. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -18,6 +19,10 @@ changes, and runs backend, editor and browser regressions on Ubuntu 24.04 and
 macOS 15 Intel/Apple Silicon. A separate Ubuntu job tests the editor in the actual
 WebKitGTK 4.1 engine used by the Linux native window, under a disposable display.
 These frontend fixtures do not require a simulator installation or user projects.
+Both macOS jobs also compile `scripts/native-macos.swift` against the system
+AppKit/WebKit frameworks, then test Monaco, popup creation/closure, a real Blob
+download, and native file selection inside that application. The temporary
+test launcher is not uploaded as a standalone distribution.
 
 Every job retains JSON and Markdown reports, UTC start/end timestamps, monotonic
 phase durations, commands and diagnostics for 30 days. Dependency installation,
@@ -47,6 +52,9 @@ application: under `$XDG_DATA_HOME/ase-studio-nunzio` (normally
 `~/Library/Application Support/ASE Studio di Nunzio` on macOS. Existing settings,
 setup files and project sources are preserved. The generated initial setup follows
 the current application/SDK paths, so moving an app does not leave stale paths.
+The preferred localhost port stays at 8765 (or `ASE_STUDIO_PORT`) to preserve
+webview preferences between launches; the server falls back to a free port if
+needed. Runtime tests explicitly request an isolated ephemeral port.
 
 Linux's native entry point still uses the system Python and GTK/WebKitGTK packages.
 The backend also supports the SDK's Python 3.10. `--server` is the entry point for

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: verify persistent data and portable paths with real make invocations.
+# Modified in the personal fork on 2026-10-28: cover macOS native chooser and Finder reveal without launching user apps.
+# Modified in the personal fork on 2026-10-28: canonicalize temporary paths consistently with the portable launcher on macOS.
 import importlib.util
 import os
 from pathlib import Path
@@ -19,7 +21,7 @@ class PackagedRuntimeTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='ase-portable-test-')
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.engine = self.root / 'Application With Spaces/engine'
         self.data = self.root / 'Persistent User Data'
         for name in ('bin/gem5', 'toolchain/bin/riscv64-unknown-elf-gcc',
@@ -96,6 +98,38 @@ class PackagedRuntimeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((project / 'main.dump').exists())
         self.assertFalse((self.data / 'programs/demo.mk').exists())
+
+    def test_macos_uses_the_native_chooser_without_linux_display_variables(self):
+        env = portable.prepare(self.engine, self.data)
+        backend = self.backend(env)
+        folder = self.data / 'programs/project'
+        folder.mkdir()
+        source = folder / 'main.s'
+        source.write_text('user source')
+        helper = self.engine / 'bin/gem5'  # Executable fixture, never executed.
+        with patch.object(backend.sys, 'platform', 'darwin'), \
+                patch.dict(os.environ, ASE_STUDIO_NATIVE_HELPER=str(helper), DISPLAY='', WAYLAND_DISPLAY=''), \
+                patch.object(backend.subprocess, 'Popen') as launch:
+            self.assertTrue(backend.open_with_editor('project')['ok'])
+            self.assertEqual(launch.call_args.args[0], [str(helper), '--open-with', str(source)])
+
+    def test_macos_reveals_only_a_valid_submission_archive(self):
+        env = portable.prepare(self.engine, self.data)
+        backend = self.backend(env)
+        folder = self.data / 'submissions'
+        folder.mkdir()
+        archive = folder / 'test.zip'
+        archive.write_bytes(b'fixture')
+        with patch.object(backend.sys, 'platform', 'darwin'), \
+                patch.object(backend, 'active_submission_directory', return_value=folder), \
+                patch.object(backend.shutil, 'which', return_value='/usr/bin/open'), \
+                patch.dict(os.environ, DISPLAY='', WAYLAND_DISPLAY=''), \
+                patch.object(backend.subprocess, 'Popen') as launch:
+            self.assertTrue(backend.reveal_submission_folder(str(archive))['ok'])
+            self.assertEqual(launch.call_args.args[0], ['/usr/bin/open', '-R', str(archive)])
+            with self.assertRaises(ValueError):
+                backend.reveal_submission_folder(str(self.engine / 'outside.zip'))
+            self.assertEqual(launch.call_count, 1)
 
 
 if __name__ == '__main__':
