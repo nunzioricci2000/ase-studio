@@ -3,7 +3,12 @@ import {createSourceEditor} from './vendor/editor.js';
 /*
  * SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
  * SPDX-License-Identifier: GPL-2.0-only
+ * Modified in the personal fork on 2026-10-27: name Nunzio's app, autosave without overlapping writes and distinguish unknown registers.
  */
+const STUDIO_NAME = "ASE Studio di Nunzio";
+let autoSaveTimer = null;
+let saveInFlight = null;
+let projectOpenRequest = 0;
 const $ = selector => document.querySelector(selector);
 
 let current = null;
@@ -141,7 +146,7 @@ function showActionMessage(title, message) {
 }
 
 const sourceEditor = createSourceEditor($("#source-editor"), {
-  onChange() { markSourceEdited(); scheduleLocalDraft(); clearDiagnostics(); refreshScaffoldProtectionUi(); clearSourceLineHighlight(); },
+  onChange() { markSourceEdited(); scheduleLocalDraft(); scheduleAutoSave(); clearDiagnostics(); refreshScaffoldProtectionUi(); clearSourceLineHighlight(); },
   onSave: () => save().catch(error => showActionMessage("Save", error.message)),
 });
 
@@ -229,7 +234,7 @@ function activeOpcodeCandidates(prefix) {
 }
 
 function updateDirtyIndicator() {
-  document.title = sourceDirty ? "ASE Studio Fork • Unsaved" : "ASE Studio Fork";
+  document.title = sourceDirty ? `${STUDIO_NAME} • Unsaved` : STUDIO_NAME;
   if (!current) return;
   $("#project-title").textContent = current.name + (sourceDirty ? " • Unsaved" : "");
 }
@@ -305,6 +310,17 @@ function scheduleLocalDraft() {
   }
   if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(writeLocalDraft, 250);
+}
+
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
+  if (!current || !sourceDirty) return;
+  setDraftStatus("Saving…");
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
+    save({automatic: true}).catch(() => { /* save keeps the draft and displays the error. */ });
+  }, 400);
 }
 
 function clearDiagnostics() {
@@ -798,31 +814,17 @@ async function loadProjects() {
 }
 
 async function resolveUnsavedProject(action) {
-  if (!current || !sourceDirty) return true;
-  const choice = await actionDialog({
-    title: "Unsaved changes",
-    message: `Save changes to "${current.name}" before you ${action}?`,
-    confirmLabel: "Save",
-    confirmValue: "save",
-    alternateLabel: "Discard",
-    alternateValue: "discard",
-    cancelLabel: "Cancel"
-  });
-  if (choice === "discard") {
-    clearLocalDraft(current.name);
-    return true;
-  }
-  if (choice !== "save") return false;
   try {
-    await save();
+    while (current && (sourceDirty || saveInFlight)) await save({automatic: true});
     return true;
   } catch (error) {
-    await showActionMessage("Save project", error.message);
+    await showActionMessage("Could not save project", `Your edits are still in the editor. Could not ${action}: ${error.message}`);
     return false;
   }
 }
 
 async function openProject(name, {skipUnsavedCheck = false} = {}) {
+  const request = ++projectOpenRequest;
   if (name === current?.name) return true;
   if (!skipUnsavedCheck && !await resolveUnsavedProject("open another project")) {
     await loadProjects();
@@ -833,6 +835,7 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
     api("/api/project?name=" + encodedName),
     api("/api/symbols?name=" + encodedName).catch(() => ({symbols: []}))
   ]);
+  if (request !== projectOpenRequest) return false;
   const localDraft = readLocalDraft(name);
   let recoveredDraft = null;
   if (localDraft && localDraft.text !== opened.text) {
@@ -855,6 +858,9 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
   } else if (localDraft) {
     clearLocalDraft(name);
   }
+  // Edits may have arrived while the new project's files were being fetched.
+  if (!skipUnsavedCheck && !await resolveUnsavedProject("open another project")) return false;
+  if (request !== projectOpenRequest) return false;
   opened.dataSymbols = symbolData.symbols || [];
   opened.initialMemory = symbolData.initialMemory || {};
   opened.memoryMap = symbolData.memoryMap || [];
@@ -900,32 +906,55 @@ async function openProject(name, {skipUnsavedCheck = false} = {}) {
   lastNormalLog = "";
   lastAdvancedLog = lastNormalLog;
   if (recoveredDraft) {
-    lastNormalLog = `Recovered a local draft for ${current.sourceName}. Save it when you are ready.`;
+    lastNormalLog = `Recovered a local draft for ${current.sourceName}. Saving automatically.`;
     lastAdvancedLog = lastNormalLog;
+    scheduleAutoSave();
   }
   updateLog();
   showTab("output");
   return true;
 }
 
-async function save() {
+async function save({automatic = false} = {}) {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
+  if (saveInFlight) {
+    await saveInFlight;
+    if (sourceDirty) return save({automatic});
+    return;
+  }
   if (!current) return;
+  if (automatic && !sourceDirty) return;
   const projectName = current.name;
   const submittedSource = sourceEditor.getValue();
-  await api("/api/save", {
+  const operation = api("/api/save", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({name: projectName, text: submittedSource, allowScaffoldEdit: scaffoldEditsAllowed()})
-  });
-  if (current?.name !== projectName) return;
-  savedSource = submittedSource;
-  markSourceEdited();
-  scaffoldEditAuthorized = false;
-  scheduleLocalDraft();
-  clearSourceLineHighlight();
-  lastNormalLog = "Saved " + current.sourceName + ".";
-  lastAdvancedLog = lastNormalLog;
-  updateLog();
+  }).then(() => {
+    if (current?.name !== projectName) return;
+    savedSource = submittedSource;
+    current.text = submittedSource;
+    markSourceEdited();
+    if (!sourceDirty) scaffoldEditAuthorized = false;
+    scheduleLocalDraft();
+    setDraftStatus(sourceDirty ? "Saving…" : "Saved");
+    if (sourceDirty) scheduleAutoSave();
+    if (!automatic) {
+      lastNormalLog = "Saved " + current.sourceName + ".";
+      lastAdvancedLog = lastNormalLog;
+      updateLog();
+    }
+  }).catch(error => {
+    if (current?.name === projectName) {
+      clearTimeout(draftSaveTimer);
+      writeLocalDraft();
+      setDraftStatus(`Not saved: ${error.message}`);
+    }
+    throw error;
+  }).finally(() => { saveInFlight = null; });
+  saveInFlight = operation;
+  return operation;
 }
 
 async function openWithChooser() {
@@ -1019,12 +1048,13 @@ async function duplicateCurrentProject() {
 }
 
 async function synchronizeExternalSource() {
-  if (!current || sourceDirty || externalSyncBusy) return;
+  if (!current || sourceDirty || saveInFlight || externalSyncBusy) return;
   const projectName = current.name;
+  const expectedSource = savedSource;
   externalSyncBusy = true;
   try {
     const disk = await api("/api/project?name=" + encodeURIComponent(projectName));
-    if (!current || current.name !== projectName || sourceDirty || disk.text === savedSource) return;
+    if (!current || current.name !== projectName || sourceDirty || saveInFlight || savedSource !== expectedSource || disk.text === savedSource) return;
     current = disk;
     sourceEditor.replaceDocument(disk.text, disk.sourceName, {preserveView:true});
     savedSource = disk.text;
@@ -1084,7 +1114,7 @@ function submissionAttachment(file) {
 }
 
 async function submitAssignment() {
-  if (!current) return;
+  if (!current || !await resolveUnsavedProject("prepare a submission")) return;
   try {
     const data = await api("/api/projects");
     $("#submission-projects").innerHTML = data.projects.map(name =>
@@ -1322,7 +1352,7 @@ function resetPipelineViewport() {
 }
 
 async function run(stepAfterRun = false) {
-  if (!current) return;
+  if (!current || !await resolveUnsavedProject("run the program")) return;
   const source = sourceEditor.getValue();
   const sourceIssues = validateProgramSource(source);
   const scaffoldIssues = validateSimulationScaffold(source);
@@ -1490,7 +1520,7 @@ function renderRegisters() {
   }
   const deltas = pipelineData.registerDeltas || {};
   const pcDeltas = pipelineData.pcDeltas || {};
-  const state = {...(pipelineData.initialRegisters || {})};
+  const state = {x0: "0x00000000", ...(pipelineData.initialRegisters || {})};
   const changed = new Set();
   let pc = "—";
   let pcChanged = false;
@@ -1512,7 +1542,7 @@ function renderRegisters() {
   const renderColumn = (prefix, aliases, roles, format, width) => aliases.map((alias, index) => {
     const name = `${prefix}${index}`;
     const label = `${name} / ${alias.replace("/", " / ")} — ${roles[index] || "register"}`;
-    return `<div class="register-value${changed.has(name) ? " changed" : ""}" data-register-change="${name}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><strong>${name}</strong><span>${escapeHtml(alias)}</span><code>${formatWordValue(state[name] || 0, format, width)}</code></div>`;
+    return `<div class="register-value${changed.has(name) ? " changed" : ""}" data-register-change="${name}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><strong>${name}</strong><span>${escapeHtml(alias)}</span><code>${state[name] === undefined ? "—" : formatWordValue(state[name], format, width)}</code></div>`;
   }).join("");
   $("#pipeline-pc").textContent = `PC ${pc}`;
   $("#pipeline-pc").classList.toggle("changed", pcChanged);
@@ -1991,7 +2021,7 @@ function sameTraceValue(left, right) {
 function registerChangeCycles(register) {
   const deltas = pipelineData?.registerDeltas || {};
   const initial = pipelineData?.initialRegisters || {};
-  let previous = initial[register] ?? "0x00000000";
+  let previous = initial[register] ?? (register === "x0" ? "0x00000000" : undefined);
   const changes = [];
   Object.keys(deltas).map(Number).sort((left, right) => left - right).forEach(cycle => {
     const update = deltas[String(cycle)];
@@ -2765,6 +2795,8 @@ async function openEnvironmentSettings() {
 }
 
 function clearCurrentProject() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
   if (draftSaveTimer !== null) {
     clearTimeout(draftSaveTimer);
     draftSaveTimer = null;

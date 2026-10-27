@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-10-27: check delayed final writebacks and epilogue filtering.
 """Serve the real application against disposable projects; never switch branches."""
 import os
 import json
@@ -38,13 +39,20 @@ with tempfile.TemporaryDirectory(prefix='ase-monaco-projects-') as scratch:
         for name in ('arithmetic', 'loop'):
             for cpu in (('in-order', 'out-of-order') if '--superscalar' in sys.argv else ('in-order',)):
                 backend.save_project_config(root / 'programs' / name,
-                    {**backend.DEFAULT_CONFIG, 'cpu':cpu})
+                    {**backend.DEFAULT_CONFIG, 'cpu':cpu, 'intMul':8})
                 built = backend.build(name)
                 assert built['ok'], built['advancedOutput']
                 simulated = backend.simulate(name)
                 assert simulated['ok'], simulated['advancedOutput']
                 trace = backend.pipeline_for_display(name)
                 assert trace['cycles'] > 0, trace
+                if cpu == 'in-order':
+                    assert len(trace['initialRegisters']) == 64, trace.get('initialRegisters')
+                    state = dict(trace['initialRegisters'])
+                    for cycle in sorted(trace['registerDeltas'], key=int):
+                        state.update(trace['registerDeltas'][cycle])
+                    assert int(state['x7' if name == 'arithmetic' else 'x5'], 16) == (70 if name == 'arithmetic' else 0), state
+                    assert all('x17' not in changes and 'x10' not in changes for changes in trace['registerDeltas'].values()), trace['registerDeltas']
                 print('PASS build, gem5 simulation and pipeline:', name, cpu, flush=True)
 
     else:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-27: preserve initial register snapshots and bind writes to completed instructions.
 """Small localhost-only backend for the experimental ASE Studio."""
 from __future__ import annotations
 
@@ -1590,9 +1591,16 @@ def parse_minor(path: Path, source_body="", include_fetch_stalls=True):
     pending_decode_stalls = defaultdict(list)
     last_fetch_address = None
     raw = []
-    register_events = defaultdict(dict)
+    initial_registers = {"x0": "0x00000000"}
+    reading_initial = False
     lines = path.read_text(errors="replace").splitlines()
     for line in lines:
+        if "ASE_INITIAL_REGISTERS_BEGIN thread=0" in line:
+            reading_initial = True
+            continue
+        if "ASE_INITIAL_REGISTERS_END" in line:
+            reading_initial = False
+            continue
         match = EVENT.match(line)
         if match:
             tick, stage, stalled, address, instruction = match.groups()
@@ -1601,7 +1609,8 @@ def parse_minor(path: Path, source_body="", include_fetch_stalls=True):
         register_match = REGISTER_EVENT.match(line)
         if register_match:
             tick, register, value = register_match.groups()
-            register_events[int(tick)][register] = value
+            if reading_initial:
+                initial_registers[register] = value
     if not include_fetch_stalls:
         # MinorCPU's timing ports necessarily spend cycles requesting and
         # returning an instruction line, even with zero-contention Direct-1
@@ -1704,6 +1713,8 @@ def parse_minor(path: Path, source_body="", include_fetch_stalls=True):
                 visible_stage = STAGES[stage]
             row["cycles"][str(cycle)] = visible_stage
             if stage == "writeback":
+                if not stalled:
+                    row["writebackTick"] = tick
                 while candidates and "W" in candidates[0]["cycles"].values():
                     candidates.popleft()
     # Minor is an in-order, fixed-stage pipeline. Once an instruction has
@@ -1738,33 +1749,34 @@ def parse_minor(path: Path, source_body="", include_fetch_stalls=True):
     compacted = compact_iterations(rows)
     add_source_lines(compacted, source_body)
     attach_dynamic_source_lines(rows, compacted)
-    # MinorGUI emits a complete register snapshot at the first writeback.
-    # Compare it with the architectural reset state so unchanged zero-valued
-    # registers are not all presented as writes by the first instruction.
+    # Forwarded snapshots can include results belonging to other instructions.
+    # Use each completed instruction's Exec result, matched by PC and WB tick.
+    # Retain the identity when the teaching view reschedules or filters rows.
     register_deltas = {}
-    previous_registers = {
-        **{f"x{index}": "0x00000000" for index in range(32)},
-        **{f"f{index}": "0x00000000" for index in range(32)},
-    }
-    for tick in sorted(register_events):
-        if tick not in cycle_for_tick:
+    completed = {(row.get("writebackTick"), row["address"]): row for row in rows
+                 if row.get("writebackTick") is not None}
+    for row in rows:
+        row["registerWrites"] = {}
+    for line in lines:
+        match = EXEC_EVENT.match(line)
+        if not match:
             continue
-        snapshot = register_events[tick]
-        changed = {register: value for register, value in snapshot.items()
-                   if register != "x0"
-                   and previous_registers.get(register) != value}
-        previous_registers.update(snapshot)
-        if changed:
-            register_deltas[str(cycle_for_tick[tick])] = changed
-    exec_registers, memory_deltas = parse_exec_playback(lines, ticks)
-    for cycle, changes in exec_registers.items():
-        register_deltas.setdefault(cycle, {}).update(changes)
+        tick, address, instruction, op_class, result = match.groups()
+        row = completed.get((int(tick), address.lower()))
+        value = re.search(r"\bD=(0x[0-9a-fA-F]+)", result)
+        destination = destination_register(instruction)
+        if row is not None and value and "MemWrite" not in op_class and destination and destination != "x0":
+            width = 16 if destination.startswith("f") else 8
+            row["registerWrites"][destination] = "0x" + value[1][2:].lower()[-width:].zfill(width)
+            register_deltas.setdefault(str(cycle_for_tick[int(tick)]), {}).update(row["registerWrites"])
+    _, memory_deltas = parse_exec_playback(lines, ticks)
     pc_deltas = {}
     for tick, stage, stalled, address, _instruction in raw:
         if stage == "fetch1" and not stalled:
             pc_deltas[str(cycle_for_tick[tick])] = "0x" + address
     return {"instructions": compacted, "dynamicInstructions": rows,
             "cycles": len(ticks), "format": "minor",
+            "initialRegisters": initial_registers,
             "registerDeltas": register_deltas, "pcDeltas": pc_deltas,
             "memoryDeltas": memory_deltas,
             "jumps": parse_taken_jumps(lines, ticks)}
@@ -2280,7 +2292,7 @@ def schedule_lecture_o3_pipeline(data, configuration, start_address=None):
             register_events[register].append((int(cycle), value))
     first_original_cycle = min(original_cycles[id(row)][0] for row in committed
                                if original_cycles[id(row)])
-    initial_registers = {}
+    initial_registers = dict(data.get("initialRegisters", {"x0": "0x00000000"}))
     for register, events in register_events.items():
         for cycle, value in sorted(events):
             if cycle >= first_original_cycle:
@@ -4689,6 +4701,14 @@ def pipeline(name):
     fill_in_order_stall_gaps(data, configuration)
     enforce_five_stage_in_order_completion(data, configuration)
     configure_o3_stage_display(data, configuration)
+    if data.get("format") == "minor":
+        data["registerDeltas"] = {}
+        for row in data.get("dynamicInstructions", []):
+            if row.get("squashed"):
+                continue
+            writeback = next((cycle for cycle, stage in row["cycles"].items() if stage == "W"), None)
+            if writeback is not None and row.get("registerWrites"):
+                data["registerDeltas"].setdefault(writeback, {}).update(row["registerWrites"])
     visible_cycles = [int(cycle) for row in data["instructions"]
                       for cycle in row["cycles"]]
     data["cycles"] = max(visible_cycles, default=0)

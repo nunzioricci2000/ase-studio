@@ -1,5 +1,6 @@
+<!-- Modified in the personal fork on 2026-10-27: name the personal app and document automatic source saving. -->
 <!-- Modified in the personal fork on 2026-10-27: clarify licensing and redistribution requirements. -->
-# ASE Studio
+# ASE Studio di Nunzio
 
 <p align="center">
   <picture>
@@ -31,7 +32,7 @@ ASE Studio is designed to live at `ase_studio/` as a Git submodule of the
 simulator repository. Clone the parent repository with its submodules:
 
 ```bash
-git clone --branch fork/main --recurse-submodules https://github.com/nunzioricci2000/ase_riscv_gem5_sim.git
+git clone --branch main --recurse-submodules https://github.com/nunzioricci2000/ase_riscv_gem5_sim.git
 cd ase_riscv_gem5_sim
 ```
 
@@ -86,6 +87,10 @@ identifies ISA extensions and pseudoinstructions, but does not guarantee support
 by the selected CPU configuration. The instruction reference is the
 [RISC-V ISA specification](https://docs.riscv.org/reference/isa/unpriv/rv32.html).
 
+Edits are saved to the project file automatically after 400 ms without typing.
+Switching projects waits for pending saves; a failed save keeps the text and a
+local recovery draft instead of discarding changes. Ctrl+S still saves immediately.
+
 The editor and its worker are served locally and work offline. No VS Code
 extension host, language server, label navigation, or inline assembler diagnostics
 are included. Pipeline selection highlights the corresponding source line.
@@ -120,7 +125,7 @@ switching branches. `--development` remains accepted for compatibility. The
 backend always comes from this Studio checkout. `ASE_STUDIO_HOST_ROOT` selects
 the simulator projects and toolchain; `ASE_STUDIO_PORT` selects another port.
 
-This personal fork installs as **ASE Studio (fork)** with its own desktop ID,
+This personal fork installs as **ASE Studio di Nunzio** with its own desktop ID,
 `org.asestudio.Personal`, so the original installation can coexist.
 
 The updater only fast-forwards the current branch from `origin`. Local changes,
@@ -134,6 +139,28 @@ The fork includes upstream Studio 1.6.0: superscalar predictors, virtualized
 pipeline navigation, memory pop-out, project folders, local drafts and compiler
 diagnostics. Draft recovery, label protection and diagnostic navigation use Monaco.
 Invalid tool paths can be repaired in Settings without blocking first launch.
+
+The interface uses HTML/CSS and plain JavaScript inside WebKitGTK. Monaco
+provides the source editor; `backend.py` compiles programs, runs gem5 and parses
+its traces. The register, memory and pipeline panels are custom views. The
+teaching timeline reschedules trace events, so register writes must stay attached
+to their dynamic instruction, rather than only to an old cycle number.
+
+For in-order runs, the parent repository's `utils/gem5-runtime.patch` records the
+entry register state and drains older instructions before a syscall can exit.
+Build the updated engine with `./utils/installation.sh gem5` from the parent,
+then rerun existing projects. Old traces cannot recover values never recorded;
+unknown initial values display as `—`. This teaching gem5 deliberately initializes
+`sp` to zero. O3 initial-state recording is not added by this MinorCPU patch.
+
+Regression coverage for these changes:
+
+- `python3 -m unittest discover -s tests -p 'test_*.py'`
+- `ASE_TEST_HOST_ROOT=/path/to/simulator python3 tests/studio-server.py --simulate`
+  checks delayed final writebacks and loop results using the installed engine.
+- Start `ASE_TEST_HOST_ROOT=/path/to/simulator python3 tests/studio-server.py`,
+  then run `node tests/autosave-browser.mjs URL SCRATCH_ROOT` with its printed
+  values to check automatic writes, navigation, slow responses and write errors.
 
 Run the fork update regression checks with `python3 -m unittest discover -s tests -p 'test_fork.py'`.
 

@@ -1,6 +1,7 @@
 /*
  * SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
  * SPDX-License-Identifier: GPL-2.0-only
+ * Modified in the personal fork on 2026-10-27: show the personal application name below the original logo.
  */
 :root {
   --ink: #172235;
@@ -43,9 +44,10 @@ header {
 }
 
 .brand { display: flex; min-width: 0; align-items: center; justify-content: center; height: 100%; border-right: 1px solid var(--line); }
-.brand button { width: 150px; height: 92px; border: 0; padding: 0; background: transparent; }
+.brand button { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 170px; height: 92px; border: 0; padding: 0; background: transparent; }
 .brand img { display: block; object-fit: contain; }
-.brand .ase-logo { width: 150px; height: 92px; }
+.brand .ase-logo { width: 150px; height: 65px; }
+.brand-name { font-size: 12px; color: var(--ink); white-space: nowrap; }
 .brand .logo-dark { display: none; }
 .header-tools { min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 14px; }
 .project-actions, .run-actions { display: flex; align-items: center; gap: 7px; }

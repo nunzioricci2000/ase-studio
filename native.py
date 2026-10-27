@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-27: name the application ASE Studio di Nunzio.
 from __future__ import annotations
 
 import argparse
@@ -18,6 +19,7 @@ from gi.repository import Gio, GLib, Gtk, WebKit2  # noqa: E402
 
 STUDIO_ROOT = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("ASE_STUDIO_HOST_ROOT", STUDIO_ROOT.parent)).resolve()
+APPLICATION_NAME = "ASE Studio di Nunzio"
 APPLICATION_ID = "org.asestudio.Personal"
 WM_CLASS = "ASEStudioFork"
 ICON_PATH = STUDIO_ROOT / "frontend" / "icon.png"
@@ -42,7 +44,7 @@ def main() -> int:
                         help="Compatibility option; all launches preserve the current branches")
     args = parser.parse_args()
     GLib.set_prgname(WM_CLASS)
-    GLib.set_application_name("ASE Studio — Fork")
+    GLib.set_application_name(APPLICATION_NAME)
     if ICON_PATH.exists():
         Gtk.Window.set_default_icon_from_file(str(ICON_PATH))
     try:
@@ -56,7 +58,7 @@ def main() -> int:
             buttons=Gtk.ButtonsType.CLOSE,
             text="Simulator runtime unavailable",
         )
-        dialog.set_title("ASE Studio startup")
+        dialog.set_title(f"{APPLICATION_NAME} startup")
         dialog.format_secondary_text(message)
         dialog.run()
         dialog.destroy()
@@ -91,7 +93,7 @@ def main() -> int:
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
 
-        window = Gtk.ApplicationWindow(application=app, title="ASE Studio — Fork")
+        window = Gtk.ApplicationWindow(application=app, title=APPLICATION_NAME)
         # GLib.set_prgname supplies ASEStudioFork as the X11 WM_CLASS. The GTK
         # application ID supplies the corresponding Wayland application ID.
         window.set_default_size(1440, 900)
@@ -147,7 +149,7 @@ def main() -> int:
                 return memory_view
 
             memory_window = Gtk.ApplicationWindow(
-                application=app, title="ASE Studio — Memory")
+                application=app, title=f"{APPLICATION_NAME} — Memory")
             memory_window.set_default_size(1050, 720)
             memory_window.set_size_request(650, 400)
             if ICON_PATH.exists():
@@ -209,7 +211,7 @@ def main() -> int:
                 buttons=Gtk.ButtonsType.YES_NO,
                 text=message,
             )
-            dialog.set_title("Exit ASE Studio")
+            dialog.set_title(f"Exit {APPLICATION_NAME}")
             response = dialog.run()
             dialog.destroy()
             return response == Gtk.ResponseType.YES

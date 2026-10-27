@@ -1,3 +1,4 @@
+// Modified in the personal fork on 2026-10-27: verify autosave when switching projects.
 // Usage: node tests/studio-browser.mjs URL SCRATCH_ROOT (from studio-server.py)
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
@@ -26,16 +27,14 @@ try {
   await page.keyboard.press('Escape');
   console.log('PASS full application Ctrl+F opens Monaco search');
   await page.keyboard.press('Control+Home');
-  await page.keyboard.insertText('# discard me\n');
+  await page.keyboard.insertText('# automatically saved\n');
   await page.getByRole('button',{name:'loop',exact:true}).click();
-  await page.locator('#message-dialog[open]').waitFor();
-  // The existing dialog exposes an explicit discard action.
-  await page.getByRole('button',{name:'Discard',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#project-title').textContent==='loop');
   await page.getByRole('button',{name:'arithmetic',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#project-title').textContent==='arithmetic');
-  assert.ok(!(await page.locator('.view-lines').innerText()).includes('discard me'));
-  console.log('PASS project switching prompts and discards edits');
+  assert.ok((await readFile(path,'utf8')).includes('automatically saved'));
+  assert.equal(await page.locator('#message-dialog[open]').count(), 0);
+  console.log('PASS project switching saves edits without prompting');
   await writeFile(path, '# external edit\n'+await readFile(path,'utf8'));
   await page.waitForFunction(()=>document.querySelector('.view-lines').textContent.replaceAll('\u00a0',' ').includes('external edit'));
   assert.equal(await page.evaluate(()=>window.aseHasUnsavedChanges()),false);
@@ -56,7 +55,8 @@ try {
   await page.screenshot({path:'/tmp/ase-monaco-studio.png'});
   await page.locator('.ase-pipeline-line').first().waitFor();
   assert.equal(await page.evaluate(()=>window.aseHasUnsavedChanges()),false);
-  console.log('PASS real simulator run and pipeline-to-source highlighting');
+  assert.equal(await page.locator('[data-register-change=x7] code').innerText(), '0x00000046');
+  console.log('PASS real simulator final register result and pipeline-to-source highlighting');
   await page.setViewportSize({width:1000,height:740});
   await page.screenshot({path:'/tmp/ase-monaco-studio.png'});
   assert.deepEqual(errors,[]);

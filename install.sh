@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-27: display the personal application name in existing launchers.
 set -euo pipefail
 
 launcher_only=false
@@ -78,7 +79,7 @@ mkdir -p "$application_dir"
   echo "[Desktop Entry]"
   echo "Version=1.0"
   echo "Type=Application"
-  echo "Name=ASE Studio (fork)"
+  echo "Name=ASE Studio di Nunzio"
   echo "Comment=RISC-V assembly and pipeline teaching studio"
   printf 'TryExec=%s\n' "$studio_dir/launch.sh"
   printf 'Exec=env "ASE_STUDIO_HOST_ROOT=%s" "%s"\n' "$host_root" "$studio_dir/launch.sh"

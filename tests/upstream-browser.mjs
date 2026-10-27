@@ -1,3 +1,4 @@
+// Modified in the personal fork on 2026-10-27: seed an interrupted-save draft explicitly.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 const url=process.argv[2];
@@ -7,14 +8,11 @@ try {
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
  await page.goto(url);
  await page.getByRole('button',{name:'arithmetic',exact:true}).click();
- await page.locator('.monaco-editor').first().click();
- await page.keyboard.press('Control+Home');
- await page.keyboard.insertText('# recovered upstream draft\n');
- await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='Local draft saved');
+ const diskSource=(await (await page.request.get(url+'/api/project?name=arithmetic')).json()).text;
+ await page.evaluate(text=>localStorage.setItem('ase-studio-draft:arithmetic',JSON.stringify({text:'# recovered upstream draft\n'+text,timestamp:Date.now()})),diskSource);
  await page.reload();
  await page.getByRole('button',{name:'arithmetic',exact:true}).click();
  await page.getByRole('button',{name:'Recover',exact:true}).click();
- await page.waitForFunction(()=>window.aseHasUnsavedChanges());
  assert.ok((await page.locator('.view-lines').innerText()).replaceAll('\u00a0', ' ').includes('recovered upstream draft'));
  await page.locator('#save').click();
  await page.waitForFunction(()=>!window.aseHasUnsavedChanges());
