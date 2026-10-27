@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Created in the personal fork on 2026-10-27: separate measured Studio checks from engine builds. -->
+<!-- Modified in the personal fork on 2026-10-28: retain frontend provenance without adding runtime assets. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -22,6 +23,9 @@ phase durations, commands and diagnostics for 30 days. Dependency installation,
 frontend compilation and runtime checks are measured separately. The npm download
 cache is reused; dependencies remain pinned by package-lock.json. Neither Node,
 Playwright nor its test browser needs to be installed by an end user.
+`frontend-inputs.json` records esbuild's exact input/output graph for each build,
+including the selected DOMPurify implementation. It is a provenance aid for
+source/notice audits, not a substitute for shipping the corresponding sources.
 
 Run locally from this repository using a new report directory:
 
