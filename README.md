@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-10-27: clarify licensing and redistribution requirements. -->
 # ASE Studio
 
 <p align="center">
@@ -157,7 +158,7 @@ Additional native and integration checks:
 
 This project is intended for education and research. The repository is
 distributed under the
-[GNU General Public License version 2](https://github.com/cad-polito-it/ase-studio/blob/main/LICENSE);
+[GNU General Public License version 2 only](LICENSE);
 redistribution and modification must follow that license. gem5 components
 retain their upstream copyright and license notices. The software is provided
 without warranty.
@@ -171,3 +172,14 @@ without warranty.
 </p>
 
 <p align="center"><small>© Politecnico di Torino 2026</small></p> 
+
+## Redistribution and license compliance
+
+The project code is **GPL-2.0-only**, except for components with their own
+license notices. You may redistribute and modify it, including commercially,
+subject to the applicable license conditions. Preserve upstream attribution
+and identify changes made in this personal fork. No upstream endorsement is implied.
+
+See [distribution requirements](DISTRIBUTION.md), [third-party components](THIRD_PARTY.md)
+and [contributor instructions](AGENTS.md). Keep all required license notices
+and provide corresponding source when distributing built artifacts.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Modified in the personal fork on 2026-10-27: retain DOMPurify MPL license in generated distributions.
 import {build} from 'esbuild';
 import {resolve} from 'node:path';
 import {mkdir, copyFile, rm} from 'node:fs/promises';
@@ -18,3 +20,5 @@ await copyFile('node_modules/monaco-editor/LICENSE', `${outdir}/MONACO-LICENSE.t
 await copyFile('node_modules/monaco-editor/ThirdPartyNotices.txt', `${outdir}/MONACO-ThirdPartyNotices.txt`);
 
 await copyFile('node_modules/dompurify/LICENSE', `${outdir}/DOMPURIFY-LICENSE.txt`);
+
+await copyFile('node_modules/dompurify/LICENSE-MPL', `${outdir}/DOMPURIFY-LICENSE-MPL.txt`);
