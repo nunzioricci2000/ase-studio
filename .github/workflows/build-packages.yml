@@ -4,10 +4,12 @@
 # Modified in the personal fork on 2026-10-28: retain administrative executable paths in Debian/Ubuntu containers.
 # Modified in the personal fork on 2026-10-28: rebuild supplied sources and test the Ubuntu desktop package under Windows WSL2.
 # Modified in the personal fork on 2026-10-28: finish development validation and keep automatic packaging on main pushes.
+# Modified in the personal fork on 2026-10-28: aggregate target evidence and create verified source-paired draft releases from stable tags.
 name: Build Studio packages
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       targets:
@@ -16,6 +18,7 @@ on:
         required: true
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: studio-packages-${{ github.ref }}-${{ inputs.targets || 'all' }}
   cancel-in-progress: false
@@ -28,7 +31,10 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - if: startsWith(github.ref, 'refs/tags/')
+        run: python3 scripts/gitflow.py verify-tag
       - id: plan
         env:
           TARGETS: ${{ inputs.targets || 'all' }}
@@ -166,3 +172,66 @@ jobs:
           path: ${{ runner.temp }}/studio-wsl-report/
           retention-days: 30
           if-no-files-found: warn
+  report:
+    if: always() && needs.sources.result == 'success'
+    needs: [sources, package, windows-wsl]
+    runs-on: ubuntu-24.04
+    outputs:
+      release_ready: ${{ steps.report.outputs.release_ready }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: studio-report-*
+          path: artifacts
+      - name: Capture selected targets and GitHub job timestamps
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_MATRIX: ${{ needs.sources.outputs.matrix }}
+        run: |
+          mkdir -p report
+          printf '%s\n' "$TARGET_MATRIX" > report/build-plan.json
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" > report/actions-jobs.json
+      - name: Aggregate runtime, source-rebuild and timing evidence
+        id: report
+        run: |
+          python3 scripts/package-report.py --artifacts artifacts --matrix report/build-plan.json \
+            --jobs report/actions-jobs.json --output report
+          cat report/build-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: studio-build-report
+          path: report/
+          retention-days: 90
+          if-no-files-found: warn
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/') && needs.report.outputs.release_ready == 'true'
+    needs: report
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: studio-*
+          path: artifacts
+      - name: Recheck every application/source archive and create a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          python3 scripts/package-report.py --artifacts artifacts --output artifacts/studio-build-report --verify-release
+          mapfile -t files < artifacts/studio-build-report/release-files.txt
+          files+=(
+            artifacts/studio-build-report/build-report.json artifacts/studio-build-report/build-report.md
+            artifacts/studio-build-report/actions-jobs.json artifacts/studio-build-report/SHA256SUMS)
+          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "ASE Studio di Nunzio $TAG" --notes-file artifacts/studio-build-report/build-report.md
