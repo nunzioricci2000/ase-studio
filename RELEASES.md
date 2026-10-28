@@ -4,13 +4,55 @@
 <!-- Modified in the personal fork on 2026-10-28: document portable startup and installed-runtime checks. -->
 <!-- Modified in the personal fork on 2026-10-28: exercise the native macOS window and preserve webview preferences. -->
 <!-- Modified in the personal fork on 2026-10-28: document collection of checksum-verified preferred dependency sources. -->
+<!-- Modified in the personal fork on 2026-10-28: build source-paired desktop packages from pinned public SDKs. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
 Studio's pipeline must consume a verified, source-paired engine SDK for each host
 platform; changing JavaScript, Python or packaging must not compile gem5 again.
-The portable-package workflow is under development. The checks below alone do
-not produce an installable desktop package or certify a platform's simulator.
+`Build Studio packages` runs automatically on main pushes and can be dispatched
+manually. Its matrix includes only source-paired SDKs in
+`scripts/engine-sdks.lock.json`; currently Fedora 43 x86-64 is the first package
+under validation. Other targets are added after their engine/runtime checks pass.
+The separate `Studio CI` checks alone do not certify a platform's simulator.
+
+The package workflow downloads the pinned public engine release, verifies its
+report checksum, revision and both archive checksums, builds the frontend and
+tests the installed application with isolated disposable projects. It executes
+eight simulations through the real HTTP API, opens the native window with Monaco,
+and checks backend shutdown before producing a package. No gem5, Python or RISC-V
+toolchain compilation occurs in this workflow. Linux tests run inside the target
+distribution with prebuilt system GTK/WebKit and SDK runtime libraries.
+
+Successful runs provide `studio-TARGET` artifacts with the application, complete
+Studio/dependency sources and matching engine sources. Reports have UTC timestamps,
+monotonic durations, checksums and sizes; diagnostics remain available on failure.
+The source collection runs once per workflow and reuses verified cached downloads.
+The engine download also has a separate `fetch-report.json` with transfer timings.
+Actions artifacts require GitHub login and are retained for 14 days; diagnostic
+reports are retained for 30 days. A permanent Studio release is a separate step.
+
+To reproduce a package on its matching host, install Node 22/npm and the prebuilt
+runtime dependencies in `scripts/runtime-dependencies.sh`, then run:
+
+```sh
+python3 scripts/fetch-engine.py --target fedora-43-x86_64 --output /tmp/studio-sdk
+python3 scripts/frontend-sources.py --output /tmp/studio-sources
+python3 scripts/package.py --sdk-artifact /tmp/studio-sdk --dependency-sources /tmp/studio-sources --output /tmp/studio-package-new
+```
+
+The supplied source archive also supports packaging without a Git checkout:
+run the same command from its `sources/project` directory, pointing the dependency
+argument at `../dependencies`. Its source manifest retains original revision and
+file hashes; local edits are explicitly reported. `npm ci` still fetches pinned
+build tools, while the preferred sources of runtime frontend dependencies are
+included in the archive. macOS packaging additionally needs Xcode command-line
+tools and the SDK's Homebrew libraries; its native package is ad-hoc signed,
+not notarized. macOS packaging code requires remote validation before release.
+
+Packages omit the seven original logo/image assets whose redistribution rights
+remain unresolved, preserving textual author and university/group attribution.
+The editable HTML template and packaging transformation are supplied as sources.
 
 ## Continuous checks
 

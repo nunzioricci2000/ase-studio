@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Created in the personal fork on 2026-10-28: native macOS window for the packaged stdlib backend.
+// Modified in the personal fork on 2026-10-28: isolate packaged application checks and require clean backend shutdown.
+// Modified in the personal fork on 2026-10-28: keep signed application resources free of Python bytecode writes.
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
@@ -95,11 +97,16 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
         process.executableURL = engine.appendingPathComponent("python/bin/python3.10")
         process.arguments = [resources.appendingPathComponent("ase_studio/portable.py").path,
                              "--server", "--engine", engine.path]
+        if testingApplication {
+            guard let data = argument("--test-data") else { fail("Application tests require isolated --test-data"); return }
+            process.arguments! += ["--data", data, "--port", "0"]
+        }
         process.currentDirectoryURL = resources
         var env = ProcessInfo.processInfo.environment
         env.removeValue(forKey: "PYTHONPATH")
         env["PYTHONHOME"] = engine.appendingPathComponent("python").path
         env["PYTHONNOUSERSITE"] = "1"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         env["DYLD_LIBRARY_PATH"] = engine.appendingPathComponent("python/lib").path
         env["ASE_STUDIO_NATIVE_HELPER"] = Bundle.main.executableURL?.path
         process.environment = env
@@ -122,7 +129,10 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
         process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if self.closing { self.finishQuit() }
+                if self.closing {
+                    if self.testing && process.terminationStatus != 0 { self.fail("Backend shutdown failed"); return }
+                    self.finishQuit()
+                }
                 else { self.fail("The backend stopped (\(process.terminationStatus)).\n\(self.errors)") }
             }
         }
@@ -298,6 +308,7 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
             URLSession.shared.dataTask(with: request).resume()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            if process.isRunning, self?.testing == true { self?.fail("Backend shutdown timed out"); return }
             if process.isRunning { process.terminate() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.finishQuit() }
         }
@@ -316,7 +327,10 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
     func fail(_ message: String) {
         fputs(message + "\n", stderr)
-        if testing { backend?.terminate(); exit(1) }
+        if testing {
+            if let process = backend, process.isRunning { process.terminate() }
+            exit(1)
+        }
         showError(message)
         stopBackend()
     }

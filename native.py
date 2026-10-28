@@ -2,13 +2,17 @@
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-27: name the application ASE Studio di Nunzio.
+# Modified in the personal fork on 2026-10-28: verify native startup and shutdown with isolated packaged-runtime data.
 from __future__ import annotations
 
 import argparse
 import gc
+import json
 import os
 import sys
 import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import gi
@@ -42,6 +46,7 @@ def main() -> int:
     parser.add_argument("port", nargs="?", type=int, default=8765)
     parser.add_argument("--development", action="store_true",
                         help="Compatibility option; all launches preserve the current branches")
+    parser.add_argument('--smoke-report', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     GLib.set_prgname(WM_CLASS)
     GLib.set_application_name(APPLICATION_NAME)
@@ -65,7 +70,12 @@ def main() -> int:
         return 1
     preferred_port = args.port
 
-    application = Gtk.Application(application_id=APPLICATION_ID)
+    flags = Gio.ApplicationFlags.NON_UNIQUE if args.smoke_report else Gio.ApplicationFlags.FLAGS_NONE
+    application = Gtk.Application(application_id=APPLICATION_ID, flags=flags)
+    smoke_started = time.monotonic()
+    smoke_timestamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds')
+    smoke_passed = False
+    smoke_finished = False
     server = None
     server_thread = None
     window = None
@@ -81,6 +91,7 @@ def main() -> int:
         nonlocal server, server_thread, window, view, memory_window
         nonlocal memory_view, memory_policy_handler, create_handler
         nonlocal closing, ui_destroyed
+        nonlocal smoke_passed, smoke_finished
         if window is not None:
             window.present()
             return
@@ -276,9 +287,36 @@ def main() -> int:
 
         GLib.timeout_add(250, close_after_server_stops)
 
+        if args.smoke_report:
+            def finish_smoke(passed):
+                nonlocal smoke_passed, smoke_finished, closing
+                if smoke_finished:
+                    return GLib.SOURCE_REMOVE
+                smoke_finished, smoke_passed, closing = True, passed, True
+                print('PASS packaged native frontend' if passed else 'Native startup timed out', flush=True)
+                threading.Thread(target=server.shutdown, daemon=True).start()
+                return GLib.SOURCE_REMOVE
+
+            def received(webview, result, _data):
+                try:
+                    if webview.evaluate_javascript_finish(result).to_string() == 'true':
+                        finish_smoke(True)
+                except GLib.Error:
+                    pass  # The page may still be navigating; the deadline remains active.
+
+            def poll_smoke():
+                if smoke_finished or view is None:
+                    return GLib.SOURCE_REMOVE
+                script = "String(typeof window.aseHasUnsavedChanges === 'function' && !!document.querySelector('.monaco-editor'))"
+                view.evaluate_javascript(script, -1, None, None, None, received, None)
+                return GLib.SOURCE_CONTINUE
+
+            GLib.timeout_add(250, poll_smoke)
+            GLib.timeout_add_seconds(45, lambda: finish_smoke(False))
+
     application.connect("activate", activate)
     try:
-        return application.run([sys.argv[0]])
+        result = application.run([sys.argv[0]])
     finally:
         terminate_active_commands()
         if server_thread is not None and server_thread.is_alive():
@@ -287,6 +325,15 @@ def main() -> int:
             server.server_close()
         if server_thread is not None:
             server_thread.join(timeout=2)
+    if args.smoke_report:
+        passed = smoke_passed and (server_thread is None or not server_thread.is_alive())
+        args.smoke_report.parent.mkdir(parents=True, exist_ok=True)
+        args.smoke_report.write_text(json.dumps(dict(status='succeeded' if passed else 'failed',
+            started_at=smoke_timestamp, finished_at=datetime.now(timezone.utc).isoformat(timespec='milliseconds'),
+            wall_seconds=time.monotonic() - smoke_started,
+            backend_stopped=server_thread is None or not server_thread.is_alive()), indent=2) + '\n')
+        return 0 if passed and result == 0 else 1
+    return result
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 # Modified in the personal fork on 2026-10-28: retain the exact frontend input graph with timing reports.
 # Modified in the personal fork on 2026-10-28: compile and exercise the native macOS webview on both architectures.
 # Modified in the personal fork on 2026-10-28: measure optional collection of corresponding frontend dependency sources.
+# Modified in the personal fork on 2026-10-28: share timing reports with package builds from supplied source archives.
 """Check the frontend without requiring or rebuilding the simulator SDK."""
 import argparse
 from datetime import datetime, timezone
@@ -25,14 +26,14 @@ def utc():
 
 
 class Report:
-    def __init__(self, output, browser):
+    def __init__(self, output, browser, revision=None):
         if output.exists() and any(output.iterdir()):
             raise ValueError('Choose a new output directory; existing reports are not overwritten')
         output.mkdir(parents=True, exist_ok=True)
         self.output = output
         self.data = dict(started_at=utc(), status='running', browser=browser,
                          platform=platform.platform(), python=sys.version,
-                         git_sha=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+                         git_sha=revision or subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                          stages=[])
         self.started = time.monotonic()
         self.save()

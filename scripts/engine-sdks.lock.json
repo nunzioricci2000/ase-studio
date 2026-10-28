@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "fedora-43-x86_64",
+      "runner": "ubuntu-24.04",
+      "image": "fedora:43",
+      "family": "fedora",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "fedora-43-x86_64-report.json",
+      "report_sha256": "2fc496e6e7ced648c8160948bfafdf7dbee7a2ac2de2f3bbfc1b3ef8593d48c8",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    }
+  ]
+}

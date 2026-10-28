@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: launch a prebuilt SDK with persistent data outside the application.
 # Modified in the personal fork on 2026-10-28: keep a stable preferred port for webview preferences across launches.
+# Modified in the personal fork on 2026-10-28: support isolated native-window validation of installed Linux packages.
+# Modified in the personal fork on 2026-10-28: prevent bytecode writes inside installed application resources.
 """Runtime entry point for packaged Studio; never fetch or build an engine."""
 import argparse
 import os
@@ -54,7 +56,7 @@ def prepare(engine, data):
             raise ValueError('The data directory contains an invalid setup_default')
     # Preserve existing settings and projects. The generated setup references
     # these environment variables so moving/updating the app does not stale paths.
-    return dict(os.environ, ASE_STUDIO_HOST_ROOT=str(data), ASE_STUDIO_ENGINE_ROOT=str(engine),
+    return dict(os.environ, PYTHONDONTWRITEBYTECODE='1', ASE_STUDIO_HOST_ROOT=str(data), ASE_STUDIO_ENGINE_ROOT=str(engine),
                 ASE_STUDIO_ASSET_ROOT=str(STUDIO))
 
 
@@ -63,11 +65,14 @@ def main():
     parser.add_argument('--engine', type=Path, default=STUDIO.parent / 'engine')
     parser.add_argument('--data', type=Path, default=default_data())
     parser.add_argument('--port', type=int, default=os.environ.get('ASE_STUDIO_PORT', '8765'))
+    parser.add_argument('--native-smoke-report', type=Path, help=argparse.SUPPRESS)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--server', action='store_true', help='Serve the native macOS webview')
     mode.add_argument('--browser', action='store_true', help='Open the interface in the system browser')
     mode.add_argument('--check', action='store_true', help='Validate startup without opening a window')
     args = parser.parse_args()
+    if args.native_smoke_report and (args.server or args.browser or args.check):
+        parser.error('Native smoke validation requires the native window')
     if os.name == 'nt':
         parser.error('Use the Linux package inside Windows WSL2')
     if not 0 <= args.port <= 65535:
@@ -85,6 +90,8 @@ def main():
     command = [sys.executable, str(STUDIO / script), str(args.port)]
     if args.browser:
         command.append('--open')
+    if args.native_smoke_report:
+        command.extend(['--smoke-report', str(args.native_smoke_report.resolve())])
     os.execve(sys.executable, command, env)
 
 

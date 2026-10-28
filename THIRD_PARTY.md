@@ -4,6 +4,7 @@
 <!-- Created in the personal fork on 2026-10-27: document bundled licenses. -->
 <!-- Modified in the personal fork on 2026-10-28: identify exact frontend revisions and the separate Codicons font license. -->
 <!-- Modified in the personal fork on 2026-10-28: retain preferred Marked sources and verify dependency archives against pinned checksums. -->
+<!-- Modified in the personal fork on 2026-10-28: omit unverified logos and pair desktop packages with exact engine sources. -->
 
 | Component | Version | License and included notices |
 | --- | --- | --- |
@@ -72,6 +73,14 @@ standard library, GTK, WebKitGTK and gem5 also retain their own licenses.
 
 Logos and other images are not covered by a blanket trademark permission.
 Their provenance and redistribution rights still need review before a release.
+`scripts/package.py` omits ase_dark.png, ase_light.png, cad-dark.webp,
+cad-light.webp, polito_dark.png, polito_light.png and icon.png from distributions.
+It preserves textual author/group/university credits and links. The originals
+remain in the development repository and are not asserted to be GPL artwork.
+Desktop packages include the engine's own license inventory and notices, and
+are distributed alongside that exact engine's complete source archive. Their
+GTK/WebKit/system libraries are installed from the host distribution rather
+than copied into the package. The native macOS launcher uses system frameworks.
 This is a focused inventory of known components, not a full dependency audit.
 
 References: [MPL/GPL guidance](https://www.mozilla.org/en-US/MPL/2.0/combining-mpl-and-gpl/)

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: test an installed Studio/SDK through its real HTTP API and disposable projects.
 # Modified in the personal fork on 2026-10-28: isolate test-server ports from existing desktop sessions.
+# Modified in the personal fork on 2026-10-28: leave signed/read-only application resources unchanged during checks.
 import argparse
 from datetime import datetime, timezone
 import json
@@ -51,7 +52,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='ase-packaged-projects-') as directory, \
                 (output / 'server.log').open('w') as log:
             data = Path(directory) / 'User Projects With Spaces'
-            env = os.environ.copy()
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
             for key in ('PYTHONHOME', 'PYTHONPATH', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH'):
                 env.pop(key, None)
             if args.python:
