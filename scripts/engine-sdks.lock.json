@@ -80,6 +80,16 @@
       "report_name": "macos-15-arm64-report.json",
       "report_sha256": "555d91b247f14204eaa7f1fb35b91523183ebe7328baddba4757b22aa73a158b",
       "engine_git_sha": "dfd2032b59abded8b50c8efa970029e241e3b262"
+    },
+    {
+      "id": "macos-15-x86_64",
+      "runner": "macos-15-intel",
+      "image": null,
+      "family": "macos",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-45ebf6f/",
+      "report_name": "macos-15-x86_64-report.json",
+      "report_sha256": "3f00b5eadf87c7317a44a9bedefe4d7c556d6da51ef138c95f41f8dc8216dd77",
+      "engine_git_sha": "45ebf6fde320eb75e04542b4ed7c977da11207ce"
     }
   ]
 }

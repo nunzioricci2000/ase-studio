@@ -10,6 +10,7 @@
 <!-- Modified in the personal fork on 2026-10-28: verify source-archive rebuilds and the desktop runtime under Windows WSL2. -->
 <!-- Modified in the personal fork on 2026-10-28: record the complete eight-target preview and verified Windows/source rebuild checks. -->
 <!-- Modified in the personal fork on 2026-10-28: automate aggregate timing reports and verified drafts for stable version tags. -->
+<!-- Modified in the personal fork on 2026-10-28: add the tested Intel engine to the native macOS package matrix. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -70,8 +71,10 @@ backend/native editor check. Package job durations were 91–183 seconds includi
 preparation and transfers; frontend/build/runtime/archive phases took 28–68
 seconds. Source rebuild checks added 34 seconds on Ubuntu and 54 on macOS.
 These are measurements of that run, not guarantees for future runner queues or
-network speed. macOS Intel remains outside the package lock until its engine
-runtime has passed the same checks.
+network speed. The lock now also includes macOS 15 Intel: its engine passed all
+seven runtime checks in run 40622939610, recovering 3,974 cached gem5 outputs and
+performing only 23 compilations and one link. Its Studio application must pass
+the native/backend and source-rebuild checks before its package is released.
 
 To reproduce a package on its matching host, install Node 22/npm and the prebuilt
 runtime dependencies in `scripts/runtime-dependencies.sh`, then run:
