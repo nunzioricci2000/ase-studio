@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: package and test Studio against pinned prebuilt engines.
+# Modified in the personal fork on 2026-10-28: build and exercise native macOS application bundles too.
 name: Build Studio packages
 on:
   push:
@@ -69,6 +70,7 @@ jobs:
           TARGET: ${{ matrix.id }}
         run: python3 scripts/fetch-engine.py --target "$TARGET" --output "$RUNNER_TEMP/engine-input"
       - name: Build and exercise the Linux desktop package
+        if: runner.os == 'Linux'
         env:
           IMAGE: ${{ matrix.image }}
           FAMILY: ${{ matrix.family }}
@@ -91,6 +93,12 @@ jobs:
               exec runuser -u studio -- python3 scripts/package.py \
                 --sdk-artifact /engine-input --dependency-sources /dependency-sources --output /output
             '
+      - name: Build and exercise the native macOS application
+        if: runner.os == 'macOS'
+        run: |
+          bash scripts/runtime-dependencies.sh macos
+          python3 scripts/package.py --sdk-artifact "$RUNNER_TEMP/engine-input" \
+            --dependency-sources "$RUNNER_TEMP/studio-dependency-sources" --output "$RUNNER_TEMP/studio-output"
       - name: Verify generated frontend and source cleanliness
         run: |
           git diff --check

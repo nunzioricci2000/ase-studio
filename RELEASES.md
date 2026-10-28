@@ -6,6 +6,7 @@
 <!-- Modified in the personal fork on 2026-10-28: document collection of checksum-verified preferred dependency sources. -->
 <!-- Modified in the personal fork on 2026-10-28: build source-paired desktop packages from pinned public SDKs. -->
 <!-- Modified in the personal fork on 2026-10-28: extend package validation to seven verified Linux engine targets. -->
+<!-- Modified in the personal fork on 2026-10-28: validate a native macOS bundle against the verified Apple Silicon SDK. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -19,6 +20,10 @@ has passed installed backend/native-window checks; the additional desktop
 packages must pass their own checks. Other engines are added after their runtime
 checks pass. Windows uses the Ubuntu package through WSL2/WSLg and requires its
 own Studio runtime verification; engine-only WSL tests do not certify the UI.
+The matrix also includes macOS 15 Apple Silicon, whose engine passed the FP
+register regression and all runtime checks. Its Studio job builds an ad-hoc
+signed `.app`, checks the backend and native WebKit editor, and rechecks the
+signature after use. A macOS package is retained only after these checks pass.
 The separate `Studio CI` checks alone do not certify a platform's simulator.
 
 The package workflow downloads the pinned public engine release, verifies its

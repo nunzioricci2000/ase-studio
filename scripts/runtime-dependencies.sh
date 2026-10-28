@@ -4,8 +4,12 @@
 # Modified in the personal fork on 2026-10-28: use Fedora's hdf5 package, which supplies its C++ runtime too.
 # Modified in the personal fork on 2026-10-28: explicitly install the Xlib/Cairo typelibs needed by PyGObject.
 # Modified in the personal fork on 2026-10-28: validate desktop packages against Debian/Ubuntu and Arch prebuilt runtimes.
+# Modified in the personal fork on 2026-10-28: install the prebuilt Homebrew libraries required by the verified macOS SDK.
 set -euo pipefail
 case "${1:?package family required}" in
+macos)
+    brew install gmp mpfr libmpc openssl@3 libffi xz sqlite readline gettext protobuf
+    ;;
 debian)
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
