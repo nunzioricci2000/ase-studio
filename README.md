@@ -1,6 +1,7 @@
 <!-- Modified in the personal fork on 2026-10-27: name the personal app and document automatic source saving. -->
 <!-- Modified in the personal fork on 2026-10-27: clarify licensing and redistribution requirements. -->
 <!-- Modified in the personal fork on 2026-10-27: document measured Studio CI and the corrected O3 engine check. -->
+<!-- Modified in the personal fork on 2026-10-28: link verified portable desktop packages and explain their runtime requirements. -->
 # ASE Studio di Nunzio
 
 <p align="center">
@@ -28,6 +29,29 @@ Please report fork-specific problems in its
 [issue tracker](https://github.com/nunzioricci2000/ase-studio/issues).
 
 ## Installation
+
+Prebuilt application packages are available in the fork's
+[GitHub Releases](https://github.com/nunzioricci2000/ase-studio/releases).
+Choose `ase-studio-nunzio-TARGET.tar.gz` for the matching Linux distribution and
+architecture, or the macOS Apple Silicon `.zip`. These packages include the
+simulation engine, Python and the RISC-V toolchain; first launch does not compile
+them. The separate `*-sources.tar.gz` archives supply the corresponding editable
+sources and are not the application to launch.
+
+On Linux, extract the application archive, enter its folder and install the
+prebuilt system runtime packages using
+`sudo bash ase_studio/scripts/runtime-dependencies.sh debian` for Ubuntu/Debian,
+or replace `debian` with `fedora` or `arch`. Then run `./ase-studio`.
+On macOS 15 Apple Silicon, install the listed Homebrew runtime libraries using
+`bash "ASE Studio di Nunzio.app/Contents/Resources/ase_studio/scripts/runtime-dependencies.sh" macos`
+and open the application. The preview is ad-hoc signed, not notarized.
+Windows uses the Ubuntu 24.04 x86-64 package inside WSL2 with WSLg; it is not a
+native Windows executable. Release notes state which platforms and runtime
+checks passed, including the scope of the virtual-display Windows check.
+Projects and settings are stored outside the application and survive replacing
+its folder. See [RELEASES.md](RELEASES.md) for build reports and source rebuilds.
+
+### Source checkout and existing simulator installations
 
 ASE Studio is designed to live at `ase_studio/` as a Git submodule of the
 simulator repository. Clone the parent repository with its submodules:

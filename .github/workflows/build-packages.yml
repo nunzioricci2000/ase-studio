@@ -3,11 +3,11 @@
 # Modified in the personal fork on 2026-10-28: build and exercise native macOS application bundles too.
 # Modified in the personal fork on 2026-10-28: retain administrative executable paths in Debian/Ubuntu containers.
 # Modified in the personal fork on 2026-10-28: rebuild supplied sources and test the Ubuntu desktop package under Windows WSL2.
+# Modified in the personal fork on 2026-10-28: finish development validation and keep automatic packaging on main pushes.
 name: Build Studio packages
 on:
   push:
-    # Validate the new workflow before its first integration into main.
-    branches: [main, feature/portable-studio-packages]
+    branches: [main]
   workflow_dispatch:
     inputs:
       targets:

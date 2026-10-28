@@ -8,6 +8,7 @@
 <!-- Modified in the personal fork on 2026-10-28: extend package validation to seven verified Linux engine targets. -->
 <!-- Modified in the personal fork on 2026-10-28: validate a native macOS bundle against the verified Apple Silicon SDK. -->
 <!-- Modified in the personal fork on 2026-10-28: verify source-archive rebuilds and the desktop runtime under Windows WSL2. -->
+<!-- Modified in the personal fork on 2026-10-28: record the complete eight-target preview and verified Windows/source rebuild checks. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -45,6 +46,17 @@ The source collection runs once per workflow and reuses verified cached download
 The engine download also has a separate `fetch-report.json` with transfer timings.
 Actions artifacts require GitHub login and are retained for 14 days; diagnostic
 reports are retained for 30 days. A permanent Studio release is a separate step.
+
+The [277459e preview](https://github.com/nunzioricci2000/ase-studio/releases/tag/studio-preview-277459e)
+publishes all eight tested packages, both source archives for each package,
+checksums and a combined report with GitHub job/step timestamps. Run 40617667293
+passed all eight package jobs, both source-archive rebuilds and the Windows WSL2
+backend/native editor check. Package job durations were 91–183 seconds including
+preparation and transfers; frontend/build/runtime/archive phases took 28–68
+seconds. Source rebuild checks added 34 seconds on Ubuntu and 54 on macOS.
+These are measurements of that run, not guarantees for future runner queues or
+network speed. macOS Intel remains outside the package lock until its engine
+runtime has passed the same checks.
 
 To reproduce a package on its matching host, install Node 22/npm and the prebuilt
 runtime dependencies in `scripts/runtime-dependencies.sh`, then run:
