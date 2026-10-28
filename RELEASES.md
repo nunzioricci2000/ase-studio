@@ -7,6 +7,7 @@
 <!-- Modified in the personal fork on 2026-10-28: build source-paired desktop packages from pinned public SDKs. -->
 <!-- Modified in the personal fork on 2026-10-28: extend package validation to seven verified Linux engine targets. -->
 <!-- Modified in the personal fork on 2026-10-28: validate a native macOS bundle against the verified Apple Silicon SDK. -->
+<!-- Modified in the personal fork on 2026-10-28: verify source-archive rebuilds and the desktop runtime under Windows WSL2. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -15,11 +16,14 @@ platform; changing JavaScript, Python or packaging must not compile gem5 again.
 `Build Studio packages` runs automatically on main pushes and can be dispatched
 manually. Its matrix includes only source-paired SDKs in
 `scripts/engine-sdks.lock.json`: Ubuntu 22.04/24.04 x86-64, Ubuntu 24.04 ARM64,
-Debian 12/13 x86-64, Fedora 43 x86-64 and Arch x86-64. The Fedora desktop package
-has passed installed backend/native-window checks; the additional desktop
-packages must pass their own checks. Other engines are added after their runtime
+Debian 12/13 x86-64, Fedora 43 x86-64 and Arch x86-64. All seven Linux desktop
+packages and the macOS Apple Silicon application passed installed backend and
+native editor checks in run 40616273940. Other engines are added after their runtime
 checks pass. Windows uses the Ubuntu package through WSL2/WSLg and requires its
 own Studio runtime verification; engine-only WSL tests do not certify the UI.
+The package workflow now tests the Ubuntu desktop archive on Windows 2025 under
+WSL2, with eight backend simulations and the actual GTK/WebKit editor under Xvfb.
+That virtual display does not certify integration with the host WSLg desktop.
 The matrix also includes macOS 15 Apple Silicon, whose engine passed the FP
 register regression and all runtime checks. Its Studio job builds an ad-hoc
 signed `.app`, checks the backend and native WebKit editor, and rechecks the
@@ -58,7 +62,12 @@ file hashes; local edits are explicitly reported. `npm ci` still fetches pinned
 build tools, while the preferred sources of runtime frontend dependencies are
 included in the archive. macOS packaging additionally needs Xcode command-line
 tools and the SDK's Homebrew libraries; its native package is ad-hoc signed,
-not notarized. macOS packaging code requires remote validation before release.
+not notarized. Ubuntu 24.04 x86-64 and macOS jobs also extract the produced source
+archive into a fresh directory without `.git`, verify every source manifest hash,
+and rebuild and test the application again using those sources. Rebuild reports
+are retained under `source-rebuild` in the diagnostic artifact; a failed rebuild
+prevents publication of that job's package. This checks functional rebuildability,
+not byte-for-byte reproducibility of timestamped archives or signatures.
 
 Packages omit the seven original logo/image assets whose redistribution rights
 remain unresolved, preserving textual author and university/group attribution.
