@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "fedora-43-x86_64",
+      "runner": "ubuntu-24.04",
+      "image": "fedora:43",
+      "family": "fedora",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "fedora-43-x86_64-report.json",
+      "report_sha256": "2fc496e6e7ced648c8160948bfafdf7dbee7a2ac2de2f3bbfc1b3ef8593d48c8",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "ubuntu-22.04-x86_64",
+      "runner": "ubuntu-22.04",
+      "image": "ubuntu:22.04",
+      "family": "debian",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "ubuntu-22.04-x86_64-report.json",
+      "report_sha256": "eb905055b248ae238b9b3ea9fc7efced011c3c37f77d57274caae8db6ea13e15",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "ubuntu-24.04-x86_64",
+      "runner": "ubuntu-24.04",
+      "image": "ubuntu:24.04",
+      "family": "debian",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "ubuntu-24.04-x86_64-report.json",
+      "report_sha256": "3a598897eca83fce0b11bbfdc90025c163f6b255604a300be279ee896b0451c8",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "ubuntu-24.04-aarch64",
+      "runner": "ubuntu-24.04-arm",
+      "image": "ubuntu:24.04",
+      "family": "debian",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "ubuntu-24.04-aarch64-report.json",
+      "report_sha256": "39f55cfe3a182cbbbd26e5201e0736edf05bb3ed3ad332b7226f1190aed79d8a",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "debian-12-x86_64",
+      "runner": "ubuntu-24.04",
+      "image": "debian:12",
+      "family": "debian",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "debian-12-x86_64-report.json",
+      "report_sha256": "034913c57ca7818264f2ac15ac2ef6d44e9afecb4219f1555c5c5f374c079531",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "debian-13-x86_64",
+      "runner": "ubuntu-24.04",
+      "image": "debian:13",
+      "family": "debian",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "debian-13-x86_64-report.json",
+      "report_sha256": "23802d8916f94747dda02c9f1551af0cdb43a546db8be9f6f0c3bd20becefe55",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "arch-x86_64",
+      "runner": "ubuntu-24.04",
+      "image": "archlinux:base",
+      "family": "arch",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-05b4675/",
+      "report_name": "arch-x86_64-report.json",
+      "report_sha256": "e15a678d563c2470166d498984885cb5a083d1a63a0783f459f4160f1dc6118f",
+      "engine_git_sha": "05b46757c26793249e01324b322c4c93616189e8"
+    },
+    {
+      "id": "macos-15-arm64",
+      "runner": "macos-15",
+      "image": null,
+      "family": "macos",
+      "base_url": "https://github.com/nunzioricci2000/ase_riscv_gem5_sim/releases/download/sdk-preview-dfd2032/",
+      "report_name": "macos-15-arm64-report.json",
+      "report_sha256": "555d91b247f14204eaa7f1fb35b91523183ebe7328baddba4757b22aa73a158b",
+      "engine_git_sha": "dfd2032b59abded8b50c8efa970029e241e3b262"
+    }
+  ]
+}

@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-27: preserve initial register snapshots and bind writes to completed instructions.
+# Modified in the personal fork on 2026-10-28: resolve packaged build/configuration resources outside persistent user data.
+# Modified in the personal fork on 2026-10-28: use native macOS application selection and submission reveal actions.
 """Small localhost-only backend for the experimental ASE Studio."""
 from __future__ import annotations
 
@@ -622,17 +624,24 @@ def save_source(folder: Path, submitted, allow_scaffold_edit=False):
 
 
 def open_with_editor(name):
-    """Open Linux's native application chooser for a project source file."""
+    """Open the host's native application chooser for a project source file."""
     folder = project_dir(name)
     source = source_file(folder)
-    helper = STUDIO_ROOT / "open_with.py"
-    if not helper.is_file():
-        fail("The system application chooser is not installed.", 500)
-    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        fail("A Linux desktop session is required to choose an application.")
+    if sys.platform == "darwin":
+        helper = Path(os.environ.get("ASE_STUDIO_NATIVE_HELPER", ""))
+        if not helper.is_file() or not os.access(helper, os.X_OK):
+            fail("Open the macOS application to use its native application chooser.", 500)
+        command = [str(helper), "--open-with", str(source)]
+    else:
+        helper = STUDIO_ROOT / "open_with.py"
+        if not helper.is_file():
+            fail("The system application chooser is not installed.", 500)
+        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            fail("A Linux desktop session is required to choose an application.")
+        command = [sys.executable, str(helper), str(source)]
     try:
         subprocess.Popen(
-            [sys.executable, str(helper), str(source)],
+            command,
             cwd=ROOT,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -641,7 +650,7 @@ def open_with_editor(name):
         )
     except OSError as error:
         fail(f"The system application chooser could not be opened: {error}", 500)
-    return {"ok": True, "output": f"Opened the Linux application chooser for {source.name}."}
+    return {"ok": True, "output": f"Opened the system application chooser for {source.name}."}
 
 
 def setup_environment():
@@ -689,7 +698,9 @@ def settings_env():
     env["CC_INSTALLATION_PATH"] = str(compiler.parent) + os.sep
     env["GEM5_INSTALLATION_PATH"] = str(
         gem5_executable_path(env["GEM5_INSTALLATION_PATH"]))
-    env["ASE_STUDIO_DEMO_MK"] = str((PROGRAMS / "demo.mk").resolve())
+    demo = resolve_environment_path(env.get("ASE_STUDIO_DEMO_MK", str(PROGRAMS / "demo.mk")))
+    # GNU make's include directive treats unescaped spaces as filename separators.
+    env["ASE_STUDIO_DEMO_MK"] = str(demo).replace(" ", "\\ ")
     # ASE Studio supports the RISC-V optimized gem5 build. Keeping these
     # fixed avoids asking users for path components that are not choices in
     # this frontend.
@@ -1218,8 +1229,8 @@ def simulate(name):
             old_trace.unlink()
     in_order = cpu_config["cpu"] == "in-order"
     gem5 = Path(configured_path(env["GEM5_INSTALLATION_PATH"]))
-    config = (configured_path(env["GEM5_SIMULATION_SCRIPT"]) if in_order
-              else str(ROOT / "gem5" / "riscv_o3_custom.py"))
+    config = configured_path(env["GEM5_SIMULATION_SCRIPT"] if in_order else
+                             env.get("GEM5_O3_SIMULATION_SCRIPT", str(ROOT / "gem5" / "riscv_o3_custom.py")))
     latency_options = [
         "--ase-int-alu-latency", str(cpu_config["intAlu"]),
         "--ase-int-mul-latency", str(cpu_config["intMul"]),
@@ -5088,14 +5099,15 @@ def reveal_submission_folder(archive_path):
         fail("Invalid submission archive path.")
     if not archive.is_file() or archive.suffix.lower() != ".zip":
         fail("The submission ZIP could not be found.", 404)
-    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+    if sys.platform != "darwin" and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         fail("A Linux desktop session is required to open the submission folder.")
-    opener = shutil.which("xdg-open")
+    opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
     if not opener:
-        fail("The system file manager opener (xdg-open) is not installed.", 500)
+        fail("The system file manager opener is not installed.", 500)
+    command = [opener, "-R", str(archive)] if sys.platform == "darwin" else [opener, str(archive.parent)]
     try:
         subprocess.Popen(
-            [opener, str(archive.parent)],
+            command,
             cwd=ROOT,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
