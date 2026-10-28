@@ -3,7 +3,8 @@
 name: Build Studio packages
 on:
   push:
-    branches: [main]
+    # Validate the new workflow before its first integration into main.
+    branches: [main, feature/portable-studio-packages]
   workflow_dispatch:
     inputs:
       targets:
