@@ -5,6 +5,7 @@
 <!-- Modified in the personal fork on 2026-10-28: exercise the native macOS window and preserve webview preferences. -->
 <!-- Modified in the personal fork on 2026-10-28: document collection of checksum-verified preferred dependency sources. -->
 <!-- Modified in the personal fork on 2026-10-28: build source-paired desktop packages from pinned public SDKs. -->
+<!-- Modified in the personal fork on 2026-10-28: extend package validation to seven verified Linux engine targets. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -12,8 +13,12 @@ Studio's pipeline must consume a verified, source-paired engine SDK for each hos
 platform; changing JavaScript, Python or packaging must not compile gem5 again.
 `Build Studio packages` runs automatically on main pushes and can be dispatched
 manually. Its matrix includes only source-paired SDKs in
-`scripts/engine-sdks.lock.json`; currently Fedora 43 x86-64 is the first package
-under validation. Other targets are added after their engine/runtime checks pass.
+`scripts/engine-sdks.lock.json`: Ubuntu 22.04/24.04 x86-64, Ubuntu 24.04 ARM64,
+Debian 12/13 x86-64, Fedora 43 x86-64 and Arch x86-64. The Fedora desktop package
+has passed installed backend/native-window checks; the additional desktop
+packages must pass their own checks. Other engines are added after their runtime
+checks pass. Windows uses the Ubuntu package through WSL2/WSLg and requires its
+own Studio runtime verification; engine-only WSL tests do not certify the UI.
 The separate `Studio CI` checks alone do not certify a platform's simulator.
 
 The package workflow downloads the pinned public engine release, verifies its
