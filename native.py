@@ -114,6 +114,14 @@ def main() -> int:
 
         view = WebKit2.WebView()
         view.get_settings().set_property("enable-developer-extras", False)
+        # Modified in the personal fork on 2026-10-28: diagnose installed-page startup on disposable displays without a GPU.
+        if args.smoke_report:
+            view.get_settings().set_property("enable-write-console-messages-to-stdout", True)
+            view.get_settings().set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.NEVER)
+            view.connect('load-failed', lambda _view, event, uri, error:
+                         print(f'Native page load failed: {uri}: {error}', flush=True) or False)
+            view.connect('web-process-terminated', lambda _view, reason:
+                         print(f'Native web process terminated: {reason}', flush=True))
 
         def open_external_links(_view, decision, decision_type):
             if decision_type not in {
@@ -288,6 +296,7 @@ def main() -> int:
         GLib.timeout_add(250, close_after_server_stops)
 
         if args.smoke_report:
+            last_diagnostic = None
             def finish_smoke(passed):
                 nonlocal smoke_passed, smoke_finished, closing
                 if smoke_finished:
@@ -298,16 +307,27 @@ def main() -> int:
                 return GLib.SOURCE_REMOVE
 
             def received(webview, result, _data):
+                nonlocal last_diagnostic
                 try:
-                    if webview.evaluate_javascript_finish(result).to_string() == 'true':
+                    diagnostic = json.loads(webview.evaluate_javascript_finish(result).to_string())
+                    if diagnostic != last_diagnostic:
+                        print('Native page: ' + json.dumps(diagnostic), flush=True)
+                        last_diagnostic = diagnostic
+                    if diagnostic['ready']:
                         finish_smoke(True)
-                except GLib.Error:
-                    pass  # The page may still be navigating; the deadline remains active.
+                except (GLib.Error, ValueError) as error:
+                    diagnostic = str(error)
+                    if diagnostic != last_diagnostic:
+                        print('Native JavaScript: ' + diagnostic, flush=True)
+                        last_diagnostic = diagnostic
 
             def poll_smoke():
                 if smoke_finished or view is None:
                     return GLib.SOURCE_REMOVE
-                script = "String(typeof window.aseHasUnsavedChanges === 'function' && !!document.querySelector('.monaco-editor'))"
+                script = """JSON.stringify({url:location.href, state:document.readyState,
+                    ready:typeof window.aseHasUnsavedChanges === 'function' && !!document.querySelector('.monaco-editor'),
+                    editor:!!document.querySelector('.monaco-editor'), dirtyHook:typeof window.aseHasUnsavedChanges,
+                    title:document.title})"""
                 view.evaluate_javascript(script, -1, None, None, None, received, None)
                 return GLib.SOURCE_CONTINUE
 
