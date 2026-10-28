@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: build and verify native Studio packages from existing source-paired SDKs.
+# Modified in the personal fork on 2026-10-28: exercise the native editor with a disposable project outside application resources.
 """Package Studio without compiling gem5, Python or the RISC-V toolchain."""
 import argparse
 import hashlib
@@ -243,10 +244,15 @@ def main():
             report.run('installed-backend', [sys.executable, 'scripts/smoke-package.py', '--studio', str(studio),
                 '--engine', str(engine), '--python', str(engine / 'python/bin/python3.10'),
                 '--output', str(output / 'runtime')], timeout=600)
+            native_data = work / 'native-data'
+            native_project = native_data / 'programs/native-smoke'
+            native_project.mkdir(parents=True)
+            (native_project / 'main.s').write_text('.text\n.globl _start\n_start:\n    li a0, 0\n    li a7, 93\n    ecall\n')
+            (native_project / 'Makefile').write_text('include $(ASE_STUDIO_DEMO_MK)\n')
             if macos:
-                native_command = [str(executable), '--smoke-application', '--test-data', str(work / 'native-data')]
+                native_command = [str(executable), '--smoke-application', '--test-data', str(native_data)]
             else:
-                native_command = ['xvfb-run', '-a', str(executable), '--data', str(work / 'native-data'),
+                native_command = ['xvfb-run', '-a', str(executable), '--data', str(native_data),
                     '--port', '0', '--native-smoke-report', str(output / 'native-runtime.json')]
             report.run('installed-native-window', native_command, timeout=120)
             if macos:

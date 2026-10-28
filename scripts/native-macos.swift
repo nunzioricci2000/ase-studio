@@ -2,6 +2,7 @@
 // Created in the personal fork on 2026-10-28: native macOS window for the packaged stdlib backend.
 // Modified in the personal fork on 2026-10-28: isolate packaged application checks and require clean backend shutdown.
 // Modified in the personal fork on 2026-10-28: keep signed application resources free of Python bytecode writes.
+// Modified in the personal fork on 2026-10-28: open the packaged test project before requiring Monaco's rendered editor.
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
@@ -356,8 +357,15 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
     func pollTest() {
         guard let view = mainView else { return }
         if testingApplication {
-            view.evaluateJavaScript("typeof window.aseHasUnsavedChanges === 'function' && !!document.querySelector('.monaco-editor')") { [weak self] value, _ in
-                guard let self = self, value as? Bool == true, !self.testFinished else { return }
+            guard let resource = Bundle.main.resourceURL?.appendingPathComponent("ase_studio/scripts/native-smoke.js"),
+                  let script = try? String(contentsOf: resource, encoding: .utf8) else {
+                fail("The packaged native test script is missing"); return
+            }
+            view.evaluateJavaScript(script) { [weak self] value, error in
+                guard let self = self, error == nil, let text = value as? String,
+                      let data = text.data(using: .utf8),
+                      let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      state["ready"] as? Bool == true, !self.testFinished else { return }
                 self.testFinished = true
                 print("PASS packaged native frontend")
                 self.stopBackend()

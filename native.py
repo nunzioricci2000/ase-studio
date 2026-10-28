@@ -297,6 +297,8 @@ def main() -> int:
 
         if args.smoke_report:
             last_diagnostic = None
+            # Modified in the personal fork on 2026-10-28: Monaco renders its view only after opening a project.
+            smoke_script = (Path(__file__).parent / 'scripts/native-smoke.js').read_text()
             def finish_smoke(passed):
                 nonlocal smoke_passed, smoke_finished, closing
                 if smoke_finished:
@@ -324,11 +326,7 @@ def main() -> int:
             def poll_smoke():
                 if smoke_finished or view is None:
                     return GLib.SOURCE_REMOVE
-                script = """JSON.stringify({url:location.href, state:document.readyState,
-                    ready:typeof window.aseHasUnsavedChanges === 'function' && !!document.querySelector('.monaco-editor'),
-                    editor:!!document.querySelector('.monaco-editor'), dirtyHook:typeof window.aseHasUnsavedChanges,
-                    title:document.title})"""
-                view.evaluate_javascript(script, -1, None, None, None, received, None)
+                view.evaluate_javascript(smoke_script, -1, None, None, None, received, None)
                 return GLib.SOURCE_CONTINUE
 
             GLib.timeout_add(250, poll_smoke)
