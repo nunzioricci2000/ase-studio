@@ -9,6 +9,8 @@
 <!-- Modified in the personal fork on 2026-10-28: validate a native macOS bundle against the verified Apple Silicon SDK. -->
 <!-- Modified in the personal fork on 2026-10-28: verify source-archive rebuilds and the desktop runtime under Windows WSL2. -->
 <!-- Modified in the personal fork on 2026-10-28: record the complete eight-target preview and verified Windows/source rebuild checks. -->
+<!-- Modified in the personal fork on 2026-10-28: automate aggregate timing reports and verified drafts for stable version tags. -->
+<!-- Modified in the personal fork on 2026-10-28: add the tested Intel engine to the native macOS package matrix. -->
 # Studio distribution workflow
 
 Studio and its simulation engine are separate repositories and build products.
@@ -47,6 +49,20 @@ The engine download also has a separate `fetch-report.json` with transfer timing
 Actions artifacts require GitHub login and are retained for 14 days; diagnostic
 reports are retained for 30 days. A permanent Studio release is a separate step.
 
+Each package workflow also retains `studio-build-report` for 90 days, with a
+JSON/Markdown report of every selected target and the GitHub job/step timestamps.
+The aggregate includes SDK transfers, installed backend/native checks and source
+rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomplete
+runtime checks or failed source rebuilds prevent the aggregate from approving a
+release. Parallel job durations must not be added to estimate elapsed workflow time.
+
+Pushing a version tag such as `v1.6.1` builds the same matrix, requires the tag to
+identify the current `main` tip and creates a draft release only after all selected
+targets pass. The draft job verifies every application/source archive's size and
+SHA-256 again and includes the aggregate report and checksums. Review the draft
+against `DISTRIBUTION.md` before publishing it; a main push alone uploads Actions
+artifacts and reports, without creating a public release.
+
 The [277459e preview](https://github.com/nunzioricci2000/ase-studio/releases/tag/studio-preview-277459e)
 publishes all eight tested packages, both source archives for each package,
 checksums and a combined report with GitHub job/step timestamps. Run 40617667293
@@ -55,8 +71,10 @@ backend/native editor check. Package job durations were 91–183 seconds includi
 preparation and transfers; frontend/build/runtime/archive phases took 28–68
 seconds. Source rebuild checks added 34 seconds on Ubuntu and 54 on macOS.
 These are measurements of that run, not guarantees for future runner queues or
-network speed. macOS Intel remains outside the package lock until its engine
-runtime has passed the same checks.
+network speed. The lock now also includes macOS 15 Intel: its engine passed all
+seven runtime checks in run 40622939610, recovering 3,974 cached gem5 outputs and
+performing only 23 compilations and one link. Its Studio application must pass
+the native/backend and source-rebuild checks before its package is released.
 
 To reproduce a package on its matching host, install Node 22/npm and the prebuilt
 runtime dependencies in `scripts/runtime-dependencies.sh`, then run:

@@ -2,3 +2,4 @@ SPDX-License-Identifier: GPL-2.0-only
 Created in the personal fork on 2026-10-28: pin verified source-paired SDK downloads independently of Studio changes.
 Modified in the personal fork on 2026-10-28: add all seven verified Linux SDK source pairs.
 Modified in the personal fork on 2026-10-28: pin the verified macOS Apple Silicon SDK with its FP register fix.
+Modified in the personal fork on 2026-10-28: add the verified macOS Intel SDK with its corresponding sources.
