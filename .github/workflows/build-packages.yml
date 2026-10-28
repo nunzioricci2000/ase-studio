@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: package and test Studio against pinned prebuilt engines.
 # Modified in the personal fork on 2026-10-28: build and exercise native macOS application bundles too.
+# Modified in the personal fork on 2026-10-28: retain administrative executable paths in Debian/Ubuntu containers.
 name: Build Studio packages
 on:
   push:
@@ -79,7 +80,7 @@ jobs:
           node_prefix=$(dirname "$(dirname "$(command -v node)")")
           docker run --rm \
             -e FAMILY -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
-            -e HOME=/tmp/studio-home -e PATH=/opt/studio-node/bin:/usr/local/bin:/usr/bin:/bin \
+            -e HOME=/tmp/studio-home -e PATH=/opt/studio-node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
             -v "$GITHUB_WORKSPACE:/repo" -w /repo \
             -v "$node_prefix:/opt/studio-node:ro" \
             -v "$RUNNER_TEMP/engine-input:/engine-input:ro" \
