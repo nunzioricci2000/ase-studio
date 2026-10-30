@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: cover interruption before removal of the prepared activation pointer.
 # Created in the personal fork on 2026-10-30: test authenticated releases, background policy, concurrent sessions and real supervisor rollback.
 import json
 import os
@@ -162,6 +163,19 @@ class UpdateTests(unittest.TestCase):
         self.executable(self.old, 'exit 0')
         self.assertEqual(updates.launch(self.install, []),0)
         self.assertEqual(self.install.current.resolve(),self.old)
+
+    def test_interrupted_activation_does_not_retry_a_leftover_queue(self):
+        new = self.install.install(self.fixture.payload('v1.6.0-abate.2'), self.fixture.target,
+                                   'v1.6.0-abate.2', check=lambda *_: None, activate=False)
+        updates.switch(self.install, new)
+        updates.write_json(self.install.root/'activation.json',
+                           {'previous': self.old.name, 'candidate': new.name, 'sequence': 2})
+        self.executable(self.old, 'exit 0')
+        self.executable(new, 'echo unexpected > "' + str(self.fixture.work/'retried') + '"')
+        self.assertEqual(updates.launch(self.install, []), 0)
+        self.assertEqual(self.install.current.resolve(), self.old)
+        self.assertFalse((self.install.root/'prepared').exists())
+        self.assertFalse((self.fixture.work/'retried').exists())
 
 
 if __name__ == '__main__':

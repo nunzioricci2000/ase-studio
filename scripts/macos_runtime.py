@@ -107,6 +107,14 @@ def closure(initial, libraries, inspect=links):
     return wanted
 
 
+def engine_libraries(executable, libraries, inspect=links):
+    initial = [dep for dep in inspect(executable)
+               if PurePosixPath(dep).name.startswith(('libprotobuf', 'libutf8_', 'libabsl_'))]
+    if not any(PurePosixPath(dep).name.startswith('libprotobuf.') for dep in initial):
+        raise ValueError('Pinned SDK no longer references the expected Protobuf ABI')
+    return closure(initial, libraries, inspect)
+
+
 def stage(engine, directory, target):
     inputs = verify(directory, target)
     notices = engine / 'licenses/macos-runtime'
@@ -129,13 +137,9 @@ def stage(engine, directory, target):
                     found = True
                 if not found:
                     raise ValueError('Missing dependency notices')
-            else:
+            elif record['kind'] == 'notice':
                 shutil.copy2(path, notices / path.name)
-        initial = [dep for dep in links(engine / 'gem5/bin/gem5.opt')
-                   if PurePosixPath(dep).name.startswith(('libprotobuf.', 'libabsl_'))]
-        if not any(PurePosixPath(dep).name.startswith('libprotobuf.') for dep in initial):
-            raise ValueError('Pinned SDK no longer references the expected Protobuf ABI')
-        chosen = closure(initial, libraries)
+        chosen = engine_libraries(engine / 'gem5/bin/gem5.opt', libraries)
         installed = {}
         for name, source in sorted(chosen.items()):
             destination = engine / 'python/lib' / name

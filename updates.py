@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: discard an interrupted activation's queue before restoring the previous version.
 # Created in the personal fork on 2026-10-30: signed background updates, coordinated activation, native readiness and rollback.
 """Release update controller and independent session supervisor; no Git operations."""
 import argparse
@@ -240,16 +241,18 @@ def launch(installation, arguments):
                     exclusive = False
                 current = installation.active()[0]
                 journal = installation.root / 'activation.json'
+                pending = installation.root / 'prepared'
                 if exclusive and journal.exists():
                     interrupted = read_json(journal)
                     switch(installation, installation.root / interrupted['previous'])
+                    if pending.is_symlink() and pending.resolve() == installation.root / interrupted['candidate']:
+                        pending.unlink()
                     current = installation.active()[0]
                     prefs = read_json(installation.root / 'updates.json')
                     prefs['rejected_sequence'] = interrupted['sequence']
                     write_json(installation.root / 'updates.json', prefs)
                     write_json(installation.root / 'update-status.json', {'phase': 'failed', 'message': 'An interrupted activation was rolled back.'})
                     journal.unlink()
-                pending = installation.root / 'prepared'
                 if exclusive and pending.is_symlink():
                     candidate = pending.resolve()
                     if candidate.parent != installation.root:

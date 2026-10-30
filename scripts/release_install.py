@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: preserve automatic updates when PowerShell resolves latest to a concrete tag.
 # Modified in the personal fork on 2026-10-30: use the bundled exact macOS Protobuf/Abseil ABI instead of unpinned Homebrew libraries.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: verify named fork identities independently of upstream versions.
@@ -575,6 +576,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['install', 'update', 'uninstall', 'dependencies'], nargs='?', default='install')
     parser.add_argument('--version', default='latest')
+    parser.add_argument('--resolved-latest', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--yes', action='store_true', help='Approve the displayed dependency operations without prompting')
     args = parser.parse_args()
     try:
@@ -607,7 +609,7 @@ def main():
                 # Explicit selections are pins. Preserve other preferences on ordinary updates.
                 preferences = installation.root / 'updates.json'
                 state = json.loads(preferences.read_text()) if preferences.exists() else {}
-                if args.version != 'latest':
+                if args.version != 'latest' and not args.resolved_latest:
                     state.update(mode='manual', pinned=version)
                 preferences.write_text(json.dumps(state) + '\n')
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:

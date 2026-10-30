@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: distinguish a user-selected pin from the Windows bootstrap's resolved latest tag.
 # Modified in the personal fork on 2026-10-30: verify independent upstream, codename and revision identities end to end.
 # Created in the personal fork on 2026-10-30: test transactional release installation, security checks and recovery without touching user data.
 import hashlib
@@ -249,6 +250,26 @@ class InstallerTests(unittest.TestCase):
         if os.geteuid() != 0:
             result = subprocess.run(['bash', str(script), '--help'], check=True, capture_output=True, text=True)
             self.assertIn('uninstall', result.stdout)
+
+    def test_cli_resolved_latest_keeps_automatic_but_explicit_version_pins(self):
+        tag = 'v1.6.0-abate.1'
+        def download(version, target, work):
+            (work/'targets.json').write_text('{"release_sequence":1}')
+            return work/'archive', tag
+        for resolved in (True, False):
+            with self.subTest(resolved=resolved):
+                payload = self.payload(tag)
+                arguments = ['installer', 'install', '--version', tag] + (['--resolved-latest'] if resolved else [])
+                with patch.object(sys, 'argv', arguments), patch.object(installer.os, 'geteuid', return_value=1000), \
+                     patch.object(installer, 'Installation', return_value=self.install), \
+                     patch.object(installer, 'host_target', return_value=self.target), \
+                     patch.object(installer, 'dependencies'), patch.object(installer, 'startup'), \
+                     patch.object(installer, 'release_download', side_effect=download), \
+                     patch.object(installer, 'extract_runtime', return_value=payload):
+                    self.assertEqual(installer.main(), 0)
+                state = json.loads((self.install.root/'updates.json').read_text())
+                self.assertEqual(state.get('mode', 'automatic'), 'automatic' if resolved else 'manual')
+                self.assertEqual(state.get('pinned'), None if resolved else tag)
 
 
 if __name__ == '__main__':

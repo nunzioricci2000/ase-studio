@@ -103,7 +103,7 @@ not relicensed as GPL. Apache-2.0 is not asserted to be GPL-2.0 compatible.
 and build recipes. Packaging copies only gem5's required library dependency
 closure, relocates the dylib references and renews ad-hoc signatures; it does not
 compile gem5 or alter the user's Homebrew installation. The application carries
-all source-archive LICENSE/NOTICE/COPYING files, recipes, relocation notice and
+all source-archive LICENSE/NOTICE/COPYING files, relocation notice and
 hash manifest in `engine/licenses/macos-runtime`. The matching Studio source
 archive includes exact library sources, original bottles and recipes in
 `sources/dependencies`. Homebrew's BSD-2-Clause license accompanies its recipes.

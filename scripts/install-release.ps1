@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: resolve one exact release without accidentally pinning default Windows installs to manual updates.
 # Created in the personal fork on 2026-10-30: install release packages on Windows 11 x86-64 through standard Ubuntu WSL2/WSLg.
 param(
     [ValidateSet('install', 'update', 'uninstall')][string]$Action = 'install',
@@ -105,6 +106,7 @@ try {
     }
     $linuxPath = Wsl @selection --exec wslpath -u ($bashPath.Replace('\', '/'))
     $options = @($Action, '--version', $tag)
+    if ($Version -eq 'latest') { $options += '--resolved-latest' }
     if ($Yes) { $options += '--yes' }
     Wsl @selection --exec bash $linuxPath.Trim() @options
     if ($Action -ne 'uninstall') {

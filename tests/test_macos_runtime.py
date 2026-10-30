@@ -51,6 +51,15 @@ class MacRuntimeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 list(runtime.selected_files(archive, lambda p: True))
 
+    def test_direct_gem5_utf8_link_is_included_even_without_protobuf_transitive_link(self):
+        libraries = {n: Path(n) for n in ('libprotobuf.36.1.0.dylib', 'libutf8_range.36.1.0.dylib')}
+        def inspect(path):
+            if path.name == 'gem5.opt':
+                return ['/opt/homebrew/opt/protobuf/lib/' + n for n in libraries] + [
+                    '/usr/lib/libSystem.B.dylib', '@rpath/libpython3.10.dylib']
+            return ['/usr/lib/libSystem.B.dylib']
+        self.assertEqual(set(runtime.engine_libraries(Path('gem5.opt'), libraries, inspect)), set(libraries))
+
     def test_cached_bytes_are_verified_before_use(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); (root / 'bottle').write_bytes(b'corrupt')
