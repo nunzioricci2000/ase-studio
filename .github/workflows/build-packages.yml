@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: authenticate source-paired macOS runtime bottles before packaging.
 # Created in the personal fork on 2026-10-28: package and test Studio against pinned prebuilt engines.
 # Modified in the personal fork on 2026-10-28: build and exercise native macOS application bundles too.
 # Modified in the personal fork on 2026-10-28: retain administrative executable paths in Debian/Ubuntu containers.
 # Modified in the personal fork on 2026-10-28: rebuild supplied sources and test the Ubuntu desktop package under Windows WSL2.
 # Modified in the personal fork on 2026-10-28: finish development validation and keep automatic packaging on main pushes.
 # Modified in the personal fork on 2026-10-28: aggregate target evidence and create verified source-paired draft releases from stable tags.
+# Modified in the personal fork on 2026-10-30: publish checksum-verified standalone installers and a target index in draft releases.
+# Modified in the personal fork on 2026-10-30: identify named fork drafts explicitly as stable releases.
 name: Build Studio packages
 on:
   push:
@@ -44,9 +47,11 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/studio-dependency-sources
-          key: studio-sources-${{ hashFiles('scripts/frontend-sources.lock.json', 'package-lock.json') }}
+          key: studio-sources-${{ hashFiles('scripts/frontend-sources.lock.json', 'scripts/macos-runtime.lock.json', 'package-lock.json') }}
       - name: Verify preferred frontend sources once per workflow
-        run: python3 scripts/frontend-sources.py --output "$RUNNER_TEMP/studio-dependency-sources"
+        run: |
+          python3 scripts/frontend-sources.py --output "$RUNNER_TEMP/studio-dependency-sources"
+          python3 scripts/macos_runtime.py --output "$RUNNER_TEMP/studio-dependency-sources"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: studio-dependency-sources
@@ -162,6 +167,14 @@ jobs:
         with:
           name: studio-ubuntu-24.04-x86_64
           path: artifact
+      - name: Parse the standalone Windows installer
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'scripts/install-release.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
       - name: Test installed Studio in WSL2 with a disposable display
         shell: pwsh
         run: ./scripts/wsl-test.ps1
@@ -208,6 +221,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
   draft-release:
+    environment: release-signing
     if: startsWith(github.ref, 'refs/tags/') && needs.report.outputs.release_ready == 'true'
     needs: report
     runs-on: ubuntu-24.04
@@ -226,12 +240,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         shell: bash
         run: |
           python3 scripts/package-report.py --artifacts artifacts --output artifacts/studio-build-report --verify-release
+          umask 077
+          export ASE_RELEASE_SIGNING_KEY_FILE="$RUNNER_TEMP/release-signing-key.pem"
+          trap 'rm -f "$ASE_RELEASE_SIGNING_KEY_FILE"' EXIT
+          test -n "$RELEASE_SIGNING_KEY"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$ASE_RELEASE_SIGNING_KEY_FILE"
+          unset RELEASE_SIGNING_KEY
+          python3 scripts/release-assets.py --artifacts artifacts --output artifacts/studio-build-report \
+            --version "$TAG" --revision "$GITHUB_SHA"
           mapfile -t files < artifacts/studio-build-report/release-files.txt
           files+=(
             artifacts/studio-build-report/build-report.json artifacts/studio-build-report/build-report.md
             artifacts/studio-build-report/actions-jobs.json artifacts/studio-build-report/SHA256SUMS)
-          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease=false \
             --title "ASE Studio di Nunzio $TAG" --notes-file artifacts/studio-build-report/build-report.md

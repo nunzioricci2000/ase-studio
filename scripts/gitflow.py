@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-27: Gitflow checks preserving upstream main.
 # Modified in the personal fork on 2026-10-27: use main/develop for personal branches.
+# Modified in the personal fork on 2026-10-30: validate fork tags against independent upstream and feature-package metadata.
+# Modified in the personal fork on 2026-10-30: block incomplete automated upstream proposals.
 import argparse
 import os
-import re
 import subprocess
+import sys
+from pathlib import Path
+sys.path.insert(1, str(Path(__file__).resolve().parents[1]))
+from versioning import read_version
 
 STABLE = "main"
 DEVELOP = "develop"
@@ -25,13 +30,16 @@ def main():
     parser.add_argument("--tag", default=os.getenv("GITHUB_REF_NAME", ""))
     args = parser.parse_args()
     if args.command == "check":
+        report = Path('UPSTREAM_INTEGRATION.md')
+        if report.exists() and 'Integration: BLOCKED' in report.read_text():
+            raise SystemExit('Upstream integration remains incomplete; resolve the actual merge before continuing')
         if os.getenv("GITHUB_EVENT_NAME") == "pull_request":
             base, head = os.environ["GITHUB_BASE_REF"], os.environ["GITHUB_HEAD_REF"]
             if not allowed_pull_request(base, head):
                 raise SystemExit(f"Gitflow rejects {head} → {base}; see RELEASES.md")
     elif args.command == "verify-tag":
-        if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-(?:rc|beta)\.\d+)?", args.tag):
-            raise SystemExit("Expected vMAJOR.MINOR.PATCH[-rc.N|-beta.N]")
+        if args.tag != read_version(Path(__file__).resolve().parents[1])["release_tag"]:
+            raise SystemExit("Release tag must match VERSION and FORK.json (for example v1.6.0-abate.1)")
         subprocess.run(["git", "fetch", "origin", STABLE], check=True)
         # Release only the stable tip, not an old ancestor or an arbitrary feature commit.
         tagged = subprocess.check_output(["git", "rev-parse", f"{args.tag}^{{commit}}"], text=True).strip()

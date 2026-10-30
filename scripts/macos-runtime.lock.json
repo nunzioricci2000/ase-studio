@@ -1,0 +1,94 @@
+{
+  "archives": [
+    {
+      "name": "protobuf-36.1-source.tar.gz",
+      "url": "https://github.com/protocolbuffers/protobuf/releases/download/v36.1/protobuf-36.1.tar.gz",
+      "sha256": "dc74fa582f559cbd31614ddfefb4868f43c919d7184bde514bb47f90c6025eb8",
+      "component": "protobuf",
+      "kind": "source",
+      "version": "36.1"
+    },
+    {
+      "name": "protobuf-36.0-source.tar.gz",
+      "url": "https://github.com/protocolbuffers/protobuf/releases/download/v36.0/protobuf-36.0.tar.gz",
+      "sha256": "399931c793f4ac6db81045b00b06dd07c877b48aeecf36c797f65c541fb533e7",
+      "component": "protobuf",
+      "kind": "source",
+      "version": "36.0"
+    },
+    {
+      "name": "abseil-20260817.0-source.tar.gz",
+      "url": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20260817.0.tar.gz",
+      "sha256": "f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d",
+      "component": "abseil",
+      "kind": "source",
+      "version": "20260817.0"
+    },
+    {
+      "name": "protobuf-36.1-arm64-bottle.tar.gz",
+      "url": "https://ghcr.io/v2/homebrew/core/protobuf/blobs/sha256:d71337d9482a824ad67165dd3415364cc0253eba1dd1beed6e02b85f16d7b604",
+      "sha256": "d71337d9482a824ad67165dd3415364cc0253eba1dd1beed6e02b85f16d7b604",
+      "kind": "bottle",
+      "component": "protobuf",
+      "version": "36.1",
+      "target": "macos-15-arm64"
+    },
+    {
+      "name": "protobuf-36.0-x86_64-bottle.tar.gz",
+      "url": "https://ghcr.io/v2/homebrew/core/protobuf/blobs/sha256:1fb99f40afcfee4da81a2f1c49c35606623b201a7968e16bc2b6360b1a5fd7b3",
+      "sha256": "1fb99f40afcfee4da81a2f1c49c35606623b201a7968e16bc2b6360b1a5fd7b3",
+      "kind": "bottle",
+      "component": "protobuf",
+      "version": "36.0",
+      "target": "macos-15-x86_64"
+    },
+    {
+      "name": "abseil-20260817.0-arm64-bottle.tar.gz",
+      "url": "https://ghcr.io/v2/homebrew/core/abseil/blobs/sha256:8a6b64d5f9d44c579343f1ffa7587d08be653c193f5af24579f6ffc1530431ea",
+      "sha256": "8a6b64d5f9d44c579343f1ffa7587d08be653c193f5af24579f6ffc1530431ea",
+      "kind": "bottle",
+      "component": "abseil",
+      "version": "20260817.0",
+      "target": "macos-15-arm64"
+    },
+    {
+      "name": "abseil-20260817.0-x86_64-bottle.tar.gz",
+      "url": "https://ghcr.io/v2/homebrew/core/abseil/blobs/sha256:7dd9d60d2e9ca6c19c97cfb8386f08fd1d5c197564095334e9037bb676c97182",
+      "sha256": "7dd9d60d2e9ca6c19c97cfb8386f08fd1d5c197564095334e9037bb676c97182",
+      "kind": "bottle",
+      "component": "abseil",
+      "version": "20260817.0",
+      "target": "macos-15-x86_64"
+    },
+    {
+      "name": "protobuf-36.1-homebrew.rb",
+      "url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/88d598cf1d2dba7063fbc29d441d072963481123/Formula/p/protobuf.rb",
+      "sha256": "88fa9e9eb2354e3afc62147418ae7d371196930671e0850c83153eaf122c237f",
+      "kind": "recipe",
+      "component": "protobuf",
+      "version": "36.1"
+    },
+    {
+      "name": "protobuf-36.0-homebrew.rb",
+      "url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/7436b93ad425ff90ed56ab9e8fe798a7c113a584/Formula/p/protobuf.rb",
+      "sha256": "cfca412ed25ec0cdea07655d916dd3ae16da3855b620cc5cef7937218766a72d",
+      "kind": "recipe",
+      "component": "protobuf",
+      "version": "36.0"
+    },
+    {
+      "name": "abseil-20260817.0-homebrew.rb",
+      "url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/88d598cf1d2dba7063fbc29d441d072963481123/Formula/a/abseil.rb",
+      "sha256": "593fc7901a8949808a470c6b505b095cb0944367e64b2db876ea73661e59b3e7",
+      "kind": "recipe",
+      "component": "abseil",
+      "version": "20260817.0"
+    },
+    {
+      "name": "Homebrew-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/88d598cf1d2dba7063fbc29d441d072963481123/LICENSE.txt",
+      "sha256": "f80329e58613ad669c0e73cb132d8060b9b2c55e339c73848068e4d1567f4627",
+      "kind": "notice"
+    }
+  ]
+}

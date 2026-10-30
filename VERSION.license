@@ -1,2 +1,4 @@
 SPDX-License-Identifier: GPL-2.0-only
 Modified in the personal fork on 2026-10-28: identify the portable desktop package release as 1.6.1.
+Modified in the personal fork on 2026-10-30: restore the integrated upstream version 1.6.0; track Abate and its revision separately in FORK.json.
+Modified in the personal fork on 2026-10-30: integrate upstream 1.6.2 while retaining the Abate feature package.

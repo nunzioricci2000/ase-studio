@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: expose upstream and named fork versions separately.
 # Modified in the personal fork on 2026-10-27: preserve initial register snapshots and bind writes to completed instructions.
 # Modified in the personal fork on 2026-10-28: resolve packaged build/configuration resources outside persistent user data.
 # Modified in the personal fork on 2026-10-28: use native macOS application selection and submission reveal actions.
@@ -44,7 +46,14 @@ PROGRAMS = ROOT / "programs"
 SUBMISSIONS = ROOT / "submissions"
 RESULTS = ROOT / "results"
 FRONTEND = STUDIO_ROOT / "frontend"
-STUDIO_VERSION = (STUDIO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+sys.path.insert(0, str(STUDIO_ROOT))
+from versioning import read_version
+STUDIO_RELEASE = read_version(STUDIO_ROOT)
+STUDIO_VERSION = STUDIO_RELEASE["upstream_version"]
+from updates import Controller, authorized
+RELEASE_UPDATES = Controller(identity=STUDIO_RELEASE)
+UPDATE_RESTARTING = False
+_RUNNING_REQUESTS = 0
 ENVIRONMENT_CONFIG = ROOT / ".ase-studio-env.json"
 ENVIRONMENT_FIELDS = (
     "PROGRAMS_DIRECTORY", "SUBMISSION_DIRECTORY",
@@ -152,12 +161,12 @@ O3_FIXED_CONFIG = {
     "robEntries": 64, "iqEntries": 128, "lqEntries": 32, "sqEntries": 32,
     "speculativeExecution": True,
     "outOfOrderExecution": True, "forwarding": True,
-    "intMul": 1, "intDiv": 1,
-    "intMulPipelined": True, "intDivPipelined": True,
 }
 DEFAULT_O3_CONFIG = {
     **DEFAULT_CONFIG, **O3_FIXED_CONFIG,
     "cpu": "out-of-order", "floatMul": 6, "floatDiv": 6,
+    "intMul": 1, "intDiv": 1,
+    "intMulPipelined": True, "intDivPipelined": True,
     "branchPredictor": "ideal",
 }
 
@@ -5056,7 +5065,7 @@ def create_submission(projects, assignment, attachments=None, expand_loops=False
     content_hash = hashlib.sha256(canonical_files).hexdigest()
     manifest = {
         "schemaVersion": 2,
-        "generatedBy": f"ASE Studio {STUDIO_VERSION}",
+        "generatedBy": f"ASE Studio {STUDIO_RELEASE['display_version']} (revision {STUDIO_RELEASE['fork_revision']})",
         "submittedAt": submitted_at,
         "assignment": assignment,
         "submissionName": archive_stem,
@@ -5537,6 +5546,10 @@ class Handler(SimpleHTTPRequestHandler):
             if url.path == "/api/health":
                 return self.send_json({"ok": True, "apiVersion": STUDIO_API_VERSION,
                                        "version": STUDIO_VERSION,
+                                       "displayVersion": STUDIO_RELEASE["display_version"],
+                                       "releaseTag": STUDIO_RELEASE["release_tag"],
+                                       "fork": {"name": STUDIO_RELEASE["fork_name"],
+                                                "revision": STUDIO_RELEASE["fork_revision"]},
                                        "o3Defaults": DEFAULT_O3_CONFIG,
                                        "features": {
                                            "developerMode": DEVELOPER_MODE,
@@ -5544,6 +5557,10 @@ class Handler(SimpleHTTPRequestHandler):
                                                ENABLE_MEMORY_CONFIGURATION,
                                            "multiIssueCpu": ENABLE_MULTI_ISSUE_CPU,
                                        }})
+            if url.path == "/api/release-update":
+                if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':
+                    return self.send_json({'error': 'Invalid local origin'}, 403)
+                return self.send_json(RELEASE_UPDATES.check())
             if url.path == "/api/update-status":
                 return self.send_json(update_status(refresh=True))
             if url.path == "/api/environment":
@@ -5580,25 +5597,59 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as error:
             return self.send_json({"error": str(error)}, 500)
     def do_POST(self):
+        global UPDATE_RESTARTING, _RUNNING_REQUESTS
         try:
             data = self.read_json()
+            if self.path == '/api/release-update':
+                if not authorized(self.headers, self.server.server_port, RELEASE_UPDATES.token):
+                    return self.send_json({'error': 'Invalid update session or origin'}, 403)
+                if not RELEASE_UPDATES.installation:
+                    return self.send_json({'error': 'Not a managed installation'}, 409)
+                action = data.get('action')
+                if action == 'mode':
+                    return self.send_json(RELEASE_UPDATES.configure(data.get('mode')))
+                if action in ('check', 'download'):
+                    return self.send_json(RELEASE_UPDATES.check(force=True, download=action == 'download'))
+                if action == 'ready':
+                    RELEASE_UPDATES.ready()
+                    return self.send_json({'ok': True})
+                if action == 'restart':
+                    with _ACTIVE_COMMANDS_LOCK:
+                        if _ACTIVE_COMMANDS or _RUNNING_REQUESTS:
+                            return self.send_json({'error': 'Wait until the simulation or build finishes'}, 409)
+                        RELEASE_UPDATES.restart()
+                        UPDATE_RESTARTING = True
+                    self.send_json({'ok': True})
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    return
+                return self.send_json({'error': 'Unknown update action'}, 400)
+            if UPDATE_RESTARTING:
+                return self.send_json({'error': 'Studio is restarting'}, 409)
             if self.path == "/api/save":
                 folder = project_dir(data.get("name"))
                 save_source(folder, data.get("text"),
                             data.get("allowScaffoldEdit", False))
                 return self.send_json({"ok": True})
             if self.path == "/api/run":
-                name = data.get("name")
-                save_source(project_dir(name), data.get("text"),
-                            data.get("allowScaffoldEdit", False))
-                built = build(name)
-                if not built["ok"]:
-                    return self.send_json({"ok": False, "phase": "build", "output": built["output"],
-                                           "advancedOutput": built["advancedOutput"]})
-                simulated = simulate(name)
-                return self.send_json({"ok": simulated["ok"], "phase": "simulate",
-                                       "output": built["output"] + "\n" + simulated["output"],
-                                       "advancedOutput": built["advancedOutput"] + "\n" + simulated["advancedOutput"]})
+                with _ACTIVE_COMMANDS_LOCK:
+                    if UPDATE_RESTARTING:
+                        return self.send_json({'error': 'Studio is restarting'}, 409)
+                    _RUNNING_REQUESTS += 1
+                try:
+                    name = data.get("name")
+                    save_source(project_dir(name), data.get("text"),
+                                data.get("allowScaffoldEdit", False))
+                    built = build(name)
+                    if not built["ok"]:
+                        return self.send_json({"ok": False, "phase": "build", "output": built["output"],
+                                               "advancedOutput": built["advancedOutput"]})
+                    simulated = simulate(name)
+                    return self.send_json({"ok": simulated["ok"], "phase": "simulate",
+                                           "output": built["output"] + "\n" + simulated["output"],
+                                           "advancedOutput": built["advancedOutput"] + "\n" + simulated["advancedOutput"]})
+                finally:
+                    with _ACTIVE_COMMANDS_LOCK:
+                        _RUNNING_REQUESTS -= 1
             if self.path == "/api/projects":
                 name = validate_project_name(data.get("name"))
                 destination = project_path(name)
