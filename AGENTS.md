@@ -46,3 +46,18 @@ il lavoro combinato GPL, il meccanismo della sezione 3.3 descritto in
 THIRD_PARTY.md. Non basare la compatibilità GPL v2 sulla sola Apache-2.0.
 Dopo un aggiornamento controllare nuovamente versione, licenza, avvisi e
 sorgenti; il lockfile da solo non costituisce il sorgente completo del bundle.
+
+<!-- Modified in the personal fork on 2026-10-30: document only fork additions and link upstream for unchanged behavior. -->
+
+## Documentazione del fork
+
+- La documentazione locale spiega le aggiunte e le modifiche del fork. Per uso,
+  funzionalità e procedure rimaste originali, linkare la documentazione upstream
+  invece di copiarla; distinguere le funzionalità ereditate da quelle introdotte qui.
+- Conservare attribuzioni, copyright, licenze e avvisi di garanzia anche quando
+  si riduce o riorganizza la documentazione originale.
+- Nel README di ASE Studio il primo contenuto visibile è il comando di installazione;
+  indicare subito se gli asset necessari non sono ancora pubblicati.
+- Per Studio, VERSION segue la versione upstream integrata. FORK.json identifica
+  il pacchetto di funzionalità (attualmente Abate) e la sua revisione; non aumentare
+  VERSION per una modifica esclusiva del fork. Vedere VERSIONING.md nel repository Studio.

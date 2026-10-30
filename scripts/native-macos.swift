@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 // Created in the personal fork on 2026-10-28: native macOS window for the packaged stdlib backend.
 // Modified in the personal fork on 2026-10-28: isolate packaged application checks and require clean backend shutdown.
 // Modified in the personal fork on 2026-10-28: keep signed application resources free of Python bytecode writes.
 // Modified in the personal fork on 2026-10-28: open the packaged test project before requiring Monaco's rendered editor.
+// Modified in the personal fork on 2026-10-30: load native verification JavaScript from an explicit external path.
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
@@ -42,6 +44,25 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
         if let path = argument("--open-with") {
             chooseApplication(URL(fileURLWithPath: path))
             return
+        }
+        if !testing, ProcessInfo.processInfo.environment["ASE_STUDIO_MANAGED_CHILD"] != "1",
+           let resources = Bundle.main.resourceURL {
+            let marker = resources.deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().appendingPathComponent(".installer.json")
+            if FileManager.default.fileExists(atPath: marker.path) {
+                let supervisor = Process()
+                supervisor.executableURL = resources.appendingPathComponent("engine/python/bin/python3.10")
+                supervisor.arguments = [resources.appendingPathComponent("ase_studio/updates.py").path, "launch"]
+                var env = ProcessInfo.processInfo.environment
+                env["PYTHONHOME"] = resources.appendingPathComponent("engine/python").path
+                env["DYLD_LIBRARY_PATH"] = resources.appendingPathComponent("engine/python/lib").path
+                env["PYTHONDONTWRITEBYTECODE"] = "1"
+                env.removeValue(forKey: "PYTHONPATH")
+                supervisor.environment = env
+                do { try supervisor.run(); allowTermination = true; NSApp.terminate(nil) }
+                catch { showError("Could not start the managed launcher: \(error)") }
+                return
+            }
         }
         installMenu()
         if let url = testURL {
@@ -130,6 +151,12 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
         process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                if process.terminationStatus == 0,
+                   let restart = ProcessInfo.processInfo.environment["ASE_STUDIO_RESTART_FILE"],
+                   FileManager.default.fileExists(atPath: restart) {
+                    self.finishQuit()
+                    return
+                }
                 if self.closing {
                     if self.testing && process.terminationStatus != 0 { self.fail("Backend shutdown failed"); return }
                     self.finishQuit()
@@ -357,9 +384,9 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
     func pollTest() {
         guard let view = mainView else { return }
         if testingApplication {
-            guard let resource = Bundle.main.resourceURL?.appendingPathComponent("ase_studio/scripts/native-smoke.js"),
-                  let script = try? String(contentsOf: resource, encoding: .utf8) else {
-                fail("The packaged native test script is missing"); return
+            guard let path = argument("--smoke-script"),
+                  let script = try? String(contentsOfFile: path, encoding: .utf8) else {
+                fail("An external --smoke-script is required"); return
             }
             view.evaluateJavaScript(script) { [weak self] value, error in
                 guard let self = self, error == nil, let text = value as? String,

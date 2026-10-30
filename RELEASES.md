@@ -11,7 +11,16 @@
 <!-- Modified in the personal fork on 2026-10-28: record the complete eight-target preview and verified Windows/source rebuild checks. -->
 <!-- Modified in the personal fork on 2026-10-28: automate aggregate timing reports and verified drafts for stable version tags. -->
 <!-- Modified in the personal fork on 2026-10-28: add the tested Intel engine to the native macOS package matrix. -->
+<!-- Modified in the personal fork on 2026-10-30: describe Abate naming, final-archive checks and fork-only documentation. -->
 # Studio distribution workflow
+
+This document covers this fork's packaging and verification. For unchanged
+application behavior, use the [original Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
+Current identity: **1.6.2 · Abate**, revision **1**, tag `v1.6.2-abate.1`.
+See [VERSIONING.md](VERSIONING.md) and [installation](INSTALLATION.md).
+Historical preview names and measurements below describe those original runs;
+they do not certify Abate. Consult the reports for the exact Abate release commit.
+
 
 Studio and its simulation engine are separate repositories and build products.
 Studio's pipeline must consume a verified, source-paired engine SDK for each host
@@ -37,7 +46,8 @@ The package workflow downloads the pinned public engine release, verifies its
 report checksum, revision and both archive checksums, builds the frontend and
 tests the installed application with isolated disposable projects. It executes
 eight simulations through the real HTTP API, opens the native window with Monaco,
-and checks backend shutdown before producing a package. No gem5, Python or RISC-V
+and checks backend shutdown against the installed final archive. Smoke scripts
+are supplied externally and are not distributed inside the application. No gem5, Python or RISC-V
 toolchain compilation occurs in this workflow. Linux tests run inside the target
 distribution with prebuilt system GTK/WebKit and SDK runtime libraries.
 
@@ -56,10 +66,13 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing a version tag such as `v1.6.1` builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.2-abate.1`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
-SHA-256 again and includes the aggregate report and checksums. Review the draft
+SHA-256 again. It checks VERSION and FORK.json against the package evidence and
+generates standalone Bash/PowerShell installers, the signed schema-3 target index and
+checksums alongside the aggregate report. Drafts are explicitly marked stable;
+the codename suffix is not a prerelease flag. Review the draft
 against `DISTRIBUTION.md` before publishing it; a main push alone uploads Actions
 artifacts and reports, without creating a public release.
 
@@ -205,3 +218,29 @@ The Ubuntu Chromium job measures this collection, reuses checksum-verified
 downloads through Actions cache and uploads `studio-dependency-sources` for
 14 days. It is collected once per workflow, since the sources are common to
 all supported hosts. Each platform still builds and tests its own runtime.
+
+
+<!-- Modified in the personal fork on 2026-10-30: require a protected signing environment and document upstream proposal automation. -->
+## Signed Abate releases
+
+The draft job uses the `release-signing` environment and its `RELEASE_SIGNING_KEY`
+secret. Only validated `v*` tags of the current main tip may reach it. The RSA-3072
+private key remains outside source archives and logs; `release-public.pem` is the
+trust root distributed with the app and standalone installer. A missing key or a
+mismatch against the public key blocks draft preparation. `targets.json.sig`
+authenticates the exact schema-3 index bytes; SHA256SUMS also inventories the signature.
+Keep the sequence in FORK.json monotonically increasing and explicitly select the
+intended stable release as GitHub's latest when publishing. A draft is never offered
+to the application updater.
+
+[Update behavior, recovery and key rotation](UPDATES.md) and
+[upstream integration automation](UPSTREAM_SYNC.md) describe the maintenance flows.
+
+<!-- Modified in the personal fork on 2026-10-30: pin private macOS SDK libraries and their complete sources. -->
+Per preparare i pacchetti macOS, eseguire anche
+`python3 scripts/macos_runtime.py --output /percorso/dependency-sources` nella
+stessa directory usata per i sorgenti frontend. Il lock include le versioni di
+Protobuf e Abseil richieste dagli SDK, le bottiglie precompilate e i loro sorgenti
+con ricette Homebrew. Il packaging seleziona le librerie effettivamente usate da
+gem5, ne adatta i riferimenti locali e le firma prima della firma del bundle.
+La ricostruzione dall'archivio sorgente riutilizza questi stessi input verificati.

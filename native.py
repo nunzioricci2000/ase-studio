@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: accept native verification scripts from outside the application.
 # Modified in the personal fork on 2026-10-27: name the application ASE Studio di Nunzio.
 # Modified in the personal fork on 2026-10-28: verify native startup and shutdown with isolated packaged-runtime data.
 from __future__ import annotations
@@ -47,7 +48,10 @@ def main() -> int:
     parser.add_argument("--development", action="store_true",
                         help="Compatibility option; all launches preserve the current branches")
     parser.add_argument('--smoke-report', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--smoke-script', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if bool(args.smoke_report) != bool(args.smoke_script):
+        parser.error('Supply both external smoke script and report')
     GLib.set_prgname(WM_CLASS)
     GLib.set_application_name(APPLICATION_NAME)
     if ICON_PATH.exists():
@@ -298,7 +302,7 @@ def main() -> int:
         if args.smoke_report:
             last_diagnostic = None
             # Modified in the personal fork on 2026-10-28: Monaco renders its view only after opening a project.
-            smoke_script = (Path(__file__).parent / 'scripts/native-smoke.js').read_text()
+            smoke_script = args.smoke_script.read_text()
             def finish_smoke(passed):
                 nonlocal smoke_passed, smoke_finished, closing
                 if smoke_finished:

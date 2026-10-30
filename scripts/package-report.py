@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: require consistent upstream and named fork identities throughout build evidence.
+# Modified in the personal fork on 2026-10-30: require final-archive installation evidence before preparing a release.
 # Created in the personal fork on 2026-10-28: aggregate package/runtime/source-rebuild evidence and verify release archive integrity.
 """Report the complete selected matrix; never infer success from missing evidence."""
 import argparse
@@ -9,6 +11,11 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(1, str(ROOT))
+from versioning import read_version
 
 RUNTIME_CHECKS = {f'{program}-{cpu}-{memory}' for program in ('arithmetic', 'loop')
                   for cpu in ('in-order', 'out-of-order') for memory in ('direct', 'cache')}
@@ -43,6 +50,7 @@ def job_seconds(job):
 
 
 def aggregate(artifacts, matrix, jobs, revision):
+    identity = read_version(ROOT)
     rows = []
     selected = [item['id'] for item in matrix['include']]
     if not selected or len(set(selected)) != len(selected) or any(not re.fullmatch(r'[a-z0-9_.-]+', x) for x in selected):
@@ -57,11 +65,13 @@ def aggregate(artifacts, matrix, jobs, revision):
             row['backend'] = read(root / 'studio-output/runtime/runtime-report.json')
             row['fetch'] = read(root / 'engine-input/fetch-report.json')
             if (package['status'] != 'succeeded' or package['git_sha'] != revision
-                    or package['studio_source_dirty'] or package['target']['id'] != target):
-                row['errors'].append('Package status, revision or target mismatch')
+                    or package['studio_source_dirty'] or package['target']['id'] != target
+                    or package.get('version') != identity['upstream_version']
+                    or package.get('release') != identity):
+                row['errors'].append('Package status, revision, target or release identity mismatch')
             if not backend_ok(row['backend']):
                 row['errors'].append('Incomplete or failed installed backend checks')
-            required = {'installed-backend', 'installed-native-window', 'verify-frontend-sources',
+            required = {'prepare-managed-update', 'managed-update-window', 'install-final-archive', 'installed-backend', 'installed-native-window', 'verify-frontend-sources',
                         'studio-sources', 'engine-sources', 'archive'}
             macos = target.startswith('macos-')
             if macos:
@@ -88,6 +98,7 @@ def aggregate(artifacts, matrix, jobs, revision):
                         or rebuild['source_archive'] not in assets
                         or verification['status'] != 'succeeded' or verification['git_sha'] != revision
                         or verification['studio_source_dirty'] or verification['target']['id'] != target
+                        or verification.get('release') != identity
                         or not stages_ok(verification, required)):
                     row['errors'].append('Source-archive rebuild failed or changed the sources')
             job = next(j for j in jobs if j['name'].startswith('package (' + target + ','))
@@ -122,7 +133,7 @@ def aggregate(artifacts, matrix, jobs, revision):
             row['status'] = 'succeeded'
     sources_passed = any(j['name'] == 'sources' and j['status'] == 'completed'
                          and j['conclusion'] == 'success' for j in jobs)
-    return dict(git_sha=revision, generated_at=datetime.now(timezone.utc).isoformat(),
+    return dict(git_sha=revision, release=identity, generated_at=datetime.now(timezone.utc).isoformat(),
                 all_succeeded=sources_passed and all(row['status'] == 'succeeded' for row in rows),
                 targets=rows, jobs=jobs,
                 notes=['Jobs execute in parallel; durations must not be added to infer workflow elapsed time.',
@@ -133,6 +144,7 @@ def aggregate(artifacts, matrix, jobs, revision):
 
 def markdown(report):
     lines = ['# Studio package build report', '', f'Commit: `{report["git_sha"]}`', '',
+             f'Release: **{report["release"]["display_version"]}** · `{report["release"]["release_tag"]}`', '',
              f'All selected targets verified: **{report["all_succeeded"]}**', '',
              '| Target | Status | Measured package/test seconds | GitHub job seconds |',
              '| --- | --- | ---: | ---: |']
