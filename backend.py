@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: expose upstream and named fork versions separately.
@@ -49,6 +50,9 @@ sys.path.insert(0, str(STUDIO_ROOT))
 from versioning import read_version
 STUDIO_RELEASE = read_version(STUDIO_ROOT)
 STUDIO_VERSION = STUDIO_RELEASE["upstream_version"]
+from updates import Controller, authorized
+RELEASE_UPDATES = Controller(identity=STUDIO_RELEASE)
+UPDATE_RESTARTING = False
 ENVIRONMENT_CONFIG = ROOT / ".ase-studio-env.json"
 ENVIRONMENT_FIELDS = (
     "PROGRAMS_DIRECTORY", "SUBMISSION_DIRECTORY",
@@ -5552,6 +5556,10 @@ class Handler(SimpleHTTPRequestHandler):
                                                ENABLE_MEMORY_CONFIGURATION,
                                            "multiIssueCpu": ENABLE_MULTI_ISSUE_CPU,
                                        }})
+            if url.path == "/api/release-update":
+                if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':
+                    return self.send_json({'error': 'Invalid local origin'}, 403)
+                return self.send_json(RELEASE_UPDATES.check())
             if url.path == "/api/update-status":
                 return self.send_json(update_status(refresh=True))
             if url.path == "/api/environment":
@@ -5588,8 +5596,34 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as error:
             return self.send_json({"error": str(error)}, 500)
     def do_POST(self):
+        global UPDATE_RESTARTING
         try:
             data = self.read_json()
+            if self.path == '/api/release-update':
+                if not authorized(self.headers, self.server.server_port, RELEASE_UPDATES.token):
+                    return self.send_json({'error': 'Invalid update session or origin'}, 403)
+                if not RELEASE_UPDATES.installation:
+                    return self.send_json({'error': 'Not a managed installation'}, 409)
+                action = data.get('action')
+                if action == 'mode':
+                    return self.send_json(RELEASE_UPDATES.configure(data.get('mode')))
+                if action in ('check', 'download'):
+                    return self.send_json(RELEASE_UPDATES.check(force=True, download=action == 'download'))
+                if action == 'ready':
+                    RELEASE_UPDATES.ready()
+                    return self.send_json({'ok': True})
+                if action == 'restart':
+                    with _ACTIVE_COMMANDS_LOCK:
+                        if _ACTIVE_COMMANDS:
+                            return self.send_json({'error': 'Wait until the simulation or build finishes'}, 409)
+                        RELEASE_UPDATES.restart()
+                        UPDATE_RESTARTING = True
+                    self.send_json({'ok': True})
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    return
+                return self.send_json({'error': 'Unknown update action'}, 400)
+            if UPDATE_RESTARTING:
+                return self.send_json({'error': 'Studio is restarting'}, 409)
             if self.path == "/api/save":
                 folder = project_dir(data.get("name"))
                 save_source(folder, data.get("text"),

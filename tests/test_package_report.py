@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-10-30: cover signed Abate update metadata and runtime dependencies.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: require matching named fork identities in release evidence.
 # Modified in the personal fork on 2026-10-30: cover final-archive installation evidence.
@@ -97,11 +98,13 @@ class PackageReportTests(unittest.TestCase):
         output = self.root / 'release'
         self.write(output / 'build-report.json', self.aggregate())
         version = read_version(ROOT)['release_tag']
-        assets.generate(self.root, output, version, self.revision)
+        from unittest.mock import patch
+        with patch.dict('os.environ', ASE_RELEASE_SIGNING_KEY_FILE='/unused/test-key'), patch.object(assets, 'sign_index', side_effect=lambda index, signature, key: signature.write_bytes(b'test signature')):
+            assets.generate(self.root, output, version, self.revision)
         index = report.read(output / 'targets.json')
         self.assertEqual(index['version'], version)
         self.assertEqual(len(index['targets'][0]['sources']), 2)
-        self.assertEqual(index['schema_version'], 2)
+        self.assertEqual(index['schema_version'], 3)
         self.assertEqual(index['fork_name'], 'Abate')
         self.assertEqual(index['upstream_version'], (ROOT / 'VERSION').read_text().strip())
         stale = self.aggregate()

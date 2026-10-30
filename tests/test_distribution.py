@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-10-30: cover signed Abate update metadata and runtime dependencies.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: verify minimal runtime contents and conservative SDK trimming.
 # Modified in the personal fork on 2026-10-30: check assistant exclusions in Git and supplied-source packaging through real archives.
@@ -73,7 +74,7 @@ class DistributionTests(unittest.TestCase):
             self.assertIn('frontend/vendor/DOMPURIFY-LICENSE-MPL.txt', files)
             self.assertIn('frontend/vendor/editor.js.LEGAL.txt', files)
             self.assertFalse(any(n.startswith(('tests/', '.github/', 'frontend/editor/')) for n in files))
-            self.assertEqual({n for n in files if n.startswith('scripts/')}, {'scripts/portable-demo.mk'})
+            self.assertEqual({n for n in files if n.startswith('scripts/')}, {'scripts/portable-demo.mk', 'scripts/release_install.py'})
             self.assertNotIn('package.json', files)
             self.assertIn('FORK.json.license', files)
             self.assertIn('versioning.py', files)

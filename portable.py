@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: accept native verification scripts from outside the application.
 # Created in the personal fork on 2026-10-28: launch a prebuilt SDK with persistent data outside the application.
@@ -83,6 +84,10 @@ def main():
         parser.error('Port must be 0..65535')
     if platform.system() == 'Darwin' and not (args.server or args.browser or args.check):
         parser.error('Open the macOS application bundle to launch its native window')
+    if not (args.check or args.server or args.native_smoke_report) and os.environ.get('ASE_STUDIO_MANAGED_CHILD') != '1':
+        from updates import managed_installation
+        if managed_installation():
+            os.execv(sys.executable, [sys.executable, str(STUDIO / 'updates.py'), 'launch', '--', *sys.argv[1:]])
     try:
         env = prepare(args.engine, args.data)
     except (OSError, ValueError) as error:

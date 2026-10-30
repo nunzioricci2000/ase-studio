@@ -16,3 +16,7 @@ tests/*
 !tests/test_release_install.py
 !tests/test_versioning.py
 !tests/test_pipeline_scroll.js
+
+!tests/test_updates.py
+!tests/test_upstream_sync.py
+!tests/pipeline-scroll.test.mjs

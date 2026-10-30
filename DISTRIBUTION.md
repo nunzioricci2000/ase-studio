@@ -69,3 +69,10 @@ archive hashes before emitting `targets.json`, both standalone installers,
 LICENSE and SHA256SUMS. It does not publish anything. Keep the existing draft
 release review. Windows WSL/Xvfb evidence is not an interactive WSLg/Start-menu
 certification; record that separate desktop check explicitly when performed.
+
+<!-- Modified in the personal fork on 2026-10-30: distribute the update runtime and public verification key while keeping signing secrets private. -->
+The runtime allowlist also includes the shared installer/update modules and the
+public verification key. Do not include private signing keys or automation tokens
+in any archive. Verify the release-index signature as well as all archive hashes.
+A native-readiness rollback check and the managed-session update tests are required
+before release; WSLg and Start-menu checks still require a real Windows desktop.

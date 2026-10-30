@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: package independent upstream and Abate release metadata.
 # Modified in the personal fork on 2026-10-30: separate minimal runtime from sources and validate installed final archives with external tests.
@@ -140,6 +141,8 @@ def export_code(destination, metadata, release=False, root=ROOT):
 
 # Every runtime entry is deliberate; editable editor sources stay in the source archive.
 RUNTIME_FILES = {
+    'updates.py', 'release_security.py', 'release-public.pem', 'release-public.pem.license',
+    'scripts/release_install.py',
     'portable.py', 'backend.py', 'native.py', 'VERSION', 'VERSION.license',
     'FORK.json', 'FORK.json.license', 'versioning.py', 'LICENSE', 'THIRD_PARTY.md',
     'scripts/portable-demo.mk', 'frontend/index.html', 'frontend/studio.css',

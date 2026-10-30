@@ -3560,4 +3560,70 @@ document.addEventListener("visibilitychange", () => {
 setInterval(synchronizeExternalSource, 1000);
 
 loadStudioVersion();
-loadProjects().then(checkForUpdate);
+loadProjects().then(async () => {
+  if (!await initializeReleaseUpdates()) await checkForUpdate();
+});
+
+
+// Modified in the personal fork on 2026-10-30: manage signed application updates without interrupting editing.
+let releaseUpdateToken;
+let releaseUpdatePolling;
+async function releaseUpdateAction(action, values = {}) {
+  return api('/api/release-update', {method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-ASE-Update-Token': releaseUpdateToken},
+    body: JSON.stringify({action, ...values})});
+}
+function renderReleaseUpdate(state) {
+  $('#release-update-mode').value = state.mode;
+  $('#release-update-mode').disabled = state.busy;
+  const labels = {checking: 'Checking for updates…', downloading: 'Downloading update…',
+    verifying: 'Checking the downloaded application…', available: 'An update is available.',
+    ready: 'Ready to update at the next launch.', current: 'Studio is up to date.'};
+  $('#release-update-status').textContent = [state.version, state.message || labels[state.phase] || ''].filter(Boolean).join(' — ');
+  $('#release-updates').textContent = state.phase === 'ready' ? 'Update ready' : state.phase === 'available' ? 'Update available' : 'Updates';
+  $('#release-update-check').disabled = state.busy;
+  $('#release-update-download').hidden = state.phase !== 'available';
+  $('#release-update-restart').hidden = state.phase !== 'ready';
+  const progress = $('#release-update-progress');
+  progress.hidden = state.phase !== 'downloading';
+  if (state.total) { progress.max = state.total; progress.value = state.received || 0; }
+  else progress.removeAttribute('value');
+  const notes = $('#release-update-notes');
+  notes.hidden = !state.url;
+  if (state.url) notes.href = state.url;
+}
+async function refreshReleaseUpdates() {
+  const state = await api('/api/release-update');
+  if (state.managed) { releaseUpdateToken = state.token; renderReleaseUpdate(state); }
+  return state;
+}
+async function initializeReleaseUpdates() {
+  try {
+    const state = await refreshReleaseUpdates();
+    if (!state.managed) return false;
+    $('#release-updates').hidden = false;
+    $('#update').hidden = true;
+    $('#release-updates').onclick = () => $('#release-update-dialog').showModal();
+    $('#release-update-close').onclick = () => $('#release-update-dialog').close();
+    const perform = async (action, values) => {
+      try { renderReleaseUpdate(await releaseUpdateAction(action, values)); }
+      catch (error) { $('#release-update-status').textContent = error.message; }
+    };
+    $('#release-update-mode').onchange = event => perform('mode', {mode: event.target.value});
+    $('#release-update-check').onclick = () => perform('check');
+    $('#release-update-download').onclick = () => perform('download');
+    $('#release-update-restart').onclick = async () => {
+      try {
+        await save();
+        if (sourceDirty) throw Error('Save the remaining changes before restarting.');
+        await releaseUpdateAction('restart');
+        clearInterval(releaseUpdatePolling);
+        $('#release-update-status').textContent = 'Restarting Studio…';
+        $('#release-update-restart').disabled = true;
+      } catch (error) { $('#release-update-status').textContent = error.message; }
+    };
+    await releaseUpdateAction('ready');
+    releaseUpdatePolling = setInterval(() => refreshReleaseUpdates().catch(() => {}), 5000);
+    return true;
+  } catch (_) { return false; }
+}

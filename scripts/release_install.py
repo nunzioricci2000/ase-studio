@@ -29,6 +29,7 @@ import zipfile
 # The standalone asset places versioning.py beside this script; checkout use finds it at the repository root.
 sys.path.insert(1, str(Path(__file__).resolve().parents[1]))
 from versioning import parse_release_tag, read_version
+from release_security import verify_signature
 
 REPOSITORY = 'nunzioricci2000/ase-studio'
 APP = 'ASE Studio di Nunzio.app'
@@ -87,7 +88,7 @@ def host_target():
     return target
 
 
-def dependencies(target, yes=False):
+def dependencies(target, yes=False, check_only=False):
     """Runtime packages only. CI installs its separate test tools afterwards."""
     privileged = [] if os.geteuid() == 0 else ['sudo']
     if target.startswith('macos-'):
@@ -120,13 +121,15 @@ def dependencies(target, yes=False):
                 selected.extend(matches)
             return selected
         libs = libraries()
+        if libs is None and check_only:
+            raise RuntimeError('Runtime dependency metadata is unavailable. Run the terminal installer to confirm package-manager operations.')
         if libs is None:
             confirm([privileged + ['apt-get', 'update']], yes)
             names = subprocess.check_output(['apt-cache', 'pkgnames'], text=True).splitlines()
             libs = libraries()
         if libs is None:
             raise RuntimeError('Runtime library packages unavailable in the configured repositories; no alternate distribution is used.')
-        packages = ('python3 python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 make '
+        packages = ('openssl python3 python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 make '
                     'libgmp10 libmpfr6 libmpc3 libbz2-1.0 liblzma5 libsqlite3-0 '
                     'libncurses6 libtinfo6 zlib1g libexpat1 libstdc++6').split() + libs
         missing = []
@@ -137,7 +140,7 @@ def dependencies(target, yes=False):
         commands = ([privileged + ['apt-get', 'update'],
                      privileged + ['apt-get', 'install', '-y', '--no-install-recommends', *missing]] if missing else [])
     elif target.startswith('fedora-'):
-        packages = ('python3 python3-gobject gobject-introspection gtk3 webkit2gtk4.1 make '
+        packages = ('openssl python3 python3-gobject gobject-introspection gtk3 webkit2gtk4.1 make '
                     'gperftools-libs protobuf hdf5 libpng libstdc++ libmpc mpfr gmp openssl-libs '
                     'libffi bzip2-libs xz-libs sqlite-libs readline ncurses-libs expat zlib-ng-compat libxcrypt-compat').split()
         missing = [p for p in packages if subprocess.run(['rpm', '-q', p], stdout=subprocess.DEVNULL).returncode]
@@ -151,6 +154,8 @@ def dependencies(target, yes=False):
         commands = [privileged + ['pacman', '-Syu', '--needed', '--noconfirm', *missing]] if missing else []
     else:
         raise ValueError('Unsupported dependency target')
+    if commands and check_only:
+        raise RuntimeError('Dependencies require confirmation in the terminal installer: ' + '; '.join(shlex.join(c) for c in commands))
     if commands:
         confirm(commands, yes)
 
@@ -162,15 +167,20 @@ class SecureRedirect(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url, destination):
+def fetch(url, destination, progress=None):
     if urlparse(url).scheme != 'https':
         raise ValueError('Only HTTPS downloads are permitted')
     opener = build_opener(HTTPSHandler(), SecureRedirect())
     temporary = destination.with_name(destination.name + '.partial')
     try:
         with opener.open(Request(url, headers={'User-Agent': 'ASE-Studio-installer'}), timeout=60) as response, temporary.open('wb') as output:
-            shutil.copyfileobj(response, output, 1024 * 1024)
             size = response.headers.get('Content-Length')
+            received = 0
+            while block := response.read(1024 * 1024):
+                output.write(block)
+                received += len(block)
+                if progress:
+                    progress(received, int(size) if size else None)
         if size is not None and temporary.stat().st_size != int(size):
             raise ValueError('Interrupted download: ' + destination.name)
         temporary.replace(destination)
@@ -193,7 +203,7 @@ def verify(path, expected):
         raise ValueError('SHA-256 mismatch: ' + path.name)
 
 
-def release_download(version, target, work):
+def release_metadata(version, target, work):
     api = f'https://api.github.com/repos/{REPOSITORY}/releases/'
     if version != 'latest':
         parse_release_tag(version)
@@ -225,8 +235,11 @@ def release_download(version, target, work):
     sums = checksums(download('SHA256SUMS'))
     index_file = download('targets.json')
     verify(index_file, sums['targets.json'])
+    verify_signature(index_file, download('targets.json.sig'))
     index = json.loads(index_file.read_text())
-    if (index['schema_version'] != 2 or index['version'] != tag
+    if type(index.get('release_sequence')) is not int or index['release_sequence'] < 1:
+        raise ValueError('Invalid release sequence')
+    if (index['schema_version'] != 3 or index['version'] != tag
             or any(index.get(key) != value for key, value in identity.items())):
         raise ValueError('Release index version mismatch')
     rows = [row for row in index['targets'] if row['id'] == target]
@@ -241,9 +254,21 @@ def release_download(version, target, work):
         name = record['name']
         if name not in assets or sums.get(name) != record['sha256'] or assets[name]['size'] != record['bytes']:
             raise ValueError('Incomplete or inconsistent release: ' + name)
-    archive = download(expected_runtime)
-    verify(archive, row['runtime']['sha256'])
-    return archive, tag
+    return index, row, base
+
+
+def release_download(version, target, work, progress=None):
+    index, row, base = release_metadata(version, target, work)
+    record = row['runtime']
+    archive = work / record['name']
+    if progress:
+        fetch(base + record['name'], archive, progress=progress)
+    else:
+        fetch(base + record['name'], archive)
+    if archive.stat().st_size != record['bytes']:
+        raise ValueError('Release asset size mismatch')
+    verify(archive, record['sha256'])
+    return archive, index['version']
 
 
 def validate_members(entries, root, casefold=False):
@@ -324,7 +349,7 @@ def extract_runtime(archive, destination, target):
 def startup(payload, macos):
     resources = payload / APP / 'Contents/Resources' if macos else payload
     engine, studio = resources / 'engine', resources / 'ase_studio'
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1')
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1', ASE_STUDIO_DISABLE_UPDATES='1')
     for key in ('PYTHONPATH', 'PYTHONHOME', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH'):
         env.pop(key, None)
     if macos:
@@ -411,6 +436,16 @@ class Installation:
             yield
         # Keep the lock inode: removing it allows concurrent processes to lock different files.
 
+    @contextmanager
+    def sessions(self, exclusive=False):
+        fd = os.open(self.root / '.sessions.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            try:
+                fcntl.flock(stream, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError('Close all ASE Studio sessions before activating or removing an update') from None
+            yield stream
+
     def active(self):
         if not self.current.is_symlink():
             if self.current.exists():
@@ -448,7 +483,8 @@ class Installation:
         return ((path.is_symlink() and os.readlink(path) == value) if kind == 'link' else
                 (path.is_file() and not path.is_symlink() and path.read_bytes() == value.encode()))
 
-    def install(self, payload, target, version, check=startup):
+    def install(self, payload, target, version, check=None, activate=True):
+        check = check or startup
         parse_release_tag(version)
         active = self.active()
         if (payload / '.installer.json').exists() or (payload / '.installer.json').is_symlink():
@@ -493,10 +529,11 @@ class Installation:
                             staging.unlink(missing_ok=True)
                 created.append(path)
             pending.symlink_to(version_dir.name)
-            pending.replace(self.current)  # The only activation step; old version survives every earlier failure.
+            pending.replace(self.current if activate else self.root / 'prepared')
         except BaseException:
             # A signal after the atomic switch must not delete the newly active version.
-            if self.current.is_symlink() and os.readlink(self.current) == version_dir.name:
+            if any(link.is_symlink() and os.readlink(link) == version_dir.name
+                   for link in (self.current, self.root / 'prepared')):
                 raise
             for path in created:
                 path.unlink(missing_ok=True)
@@ -505,7 +542,7 @@ class Installation:
         finally:
             pending.unlink(missing_ok=True)
         # Retain old versions while the app may still be running; uninstall removes managed versions.
-        print('Installed ' + version + ' for ' + target + ': ' + str(self.current))
+        print(('Installed ' if activate else 'Prepared ') + version + ' for ' + target + ': ' + str(self.current))
         if str(self.launcher.parent) not in os.environ.get('PATH', '').split(os.pathsep):
             print('Add ~/.local/bin to PATH to use ase-studio from your terminal. Shell configuration was not changed.')
         return version_dir
@@ -528,6 +565,7 @@ class Installation:
                 continue
             if json.loads(marker.read_text()).get('owner') == OWNER:
                 shutil.rmtree(directory)
+        (self.root / 'prepared').unlink(missing_ok=True)
         print('ASE Studio removed. Projects, preferences, shared dependencies and the installer lock directory were preserved.')
 
 
@@ -544,7 +582,7 @@ def main():
         if os.geteuid() == 0:
             raise ValueError('Run the installer as your normal desktop user, without sudo')
         installation = Installation()
-        with installation.lock():
+        with installation.lock(), installation.sessions(exclusive=True):
             if args.action == 'uninstall':
                 installation.uninstall()
                 return 0
@@ -553,10 +591,23 @@ def main():
             target = host_target()
             with tempfile.TemporaryDirectory(prefix='ase-release-') as directory:
                 work = Path(directory)
+                dependencies(target, args.yes)
                 archive, version = release_download(args.version, target, work)
                 payload = extract_runtime(archive, work / 'unpacked', target)
-                dependencies(target, args.yes)
+                identity = read_version((payload / APP / 'Contents/Resources' if installation.macos else payload) / 'ase_studio')
+                index = json.loads((work / 'targets.json').read_text())
+                if identity['release_sequence'] != index['release_sequence']:
+                    raise ValueError('Archive sequence differs from signed index')
                 installation.install(payload, target, version)
+                (installation.root / 'prepared').unlink(missing_ok=True)
+                (installation.root / 'activation.json').unlink(missing_ok=True)
+                (installation.root / 'update-status.json').unlink(missing_ok=True)
+                # Explicit selections are pins. Preserve other preferences on ordinary updates.
+                preferences = installation.root / 'updates.json'
+                state = json.loads(preferences.read_text()) if preferences.exists() else {}
+                if args.version != 'latest':
+                    state.update(mode='manual', pinned=version)
+                preferences.write_text(json.dumps(state) + '\n')
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
         print('ASE Studio installation failed: ' + str(error), file=sys.stderr)
         return 1

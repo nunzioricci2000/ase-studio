@@ -85,3 +85,9 @@ This is a focused inventory of known components, not a full dependency audit.
 
 References: [MPL/GPL guidance](https://www.mozilla.org/en-US/MPL/2.0/combining-mpl-and-gpl/)
 and [MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
+
+<!-- Modified in the personal fork on 2026-10-30: identify external signature-verification tooling without bundling or relicensing it. -->
+Release-index signing and verification invoke the host's OpenSSL command as a
+separate program. No OpenSSL implementation is copied into the updater, and this
+fork does not relicense the system executable. Runtime dependency recipes install
+the distribution-provided command; SDK source/license obligations remain unchanged.

@@ -16,7 +16,7 @@ release containing the new installer assets is published.**
 
 # ASE Studio di Nunzio · Abate
 
-**Upstream 1.6.0 · Abate · fork revision 1.** Abate names this fork's first
+**Upstream 1.6.2 · Abate · fork revision 1.** Abate names this fork's first
 feature package: *Monaco → monaco → abate*. The numeric version follows the
 original project; the feature name and fork revision evolve independently.
 See [version naming](VERSIONING.md).
@@ -25,7 +25,7 @@ This repository documents the additions and changes maintained in
 [nunzioricci2000/ase-studio](https://github.com/nunzioricci2000/ase-studio).
 For the application overview, standard project/simulation workflow, panels and
 unmodified settings, use the [original ASE Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
-The [documentation at the integrated upstream revision](https://github.com/cad-polito-it/ase-studio/blob/042dcca77c721d1557abce8a90d36f997dfd2391/README.md)
+The [documentation at the integrated upstream revision](https://github.com/cad-polito-it/ase-studio/blob/10f03c8d3b8d331e673dd23d46ca3fcceac502fd/README.md)
 provides a reference if upstream subsequently changes.
 
 ## What Abate adds
@@ -39,7 +39,7 @@ provides a reference if upstream subsequently changes.
   writes stay attached to the correct dynamic instruction. Unknown historical
   values remain unknown instead of being presented as zero.
 - **Standalone desktop packages:** an installer for Linux/macOS and Windows
-  through WSL2/WSLg, prebuilt SDKs, explicit updates and persistent data outside
+  through WSL2/WSLg, prebuilt SDKs, signed automatic updates and persistent data outside
   the application. See [installation](INSTALLATION.md).
 - **Personal-fork integration:** a separate application identity, explicit host
   checkout selection and updates that preserve the current branch and local
@@ -52,6 +52,7 @@ are described upstream; they are not claimed as additions by this fork.
 
 [Development and regression checks](DEVELOPING.md) ·
 [Version naming](VERSIONING.md) ·
+[Automatic updates and recovery](UPDATES.md) ·
 [Package pipelines and reports](RELEASES.md) ·
 [Fork issue tracker](https://github.com/nunzioricci2000/ase-studio/issues).
 
@@ -71,3 +72,5 @@ redistribution permitted by the applicable licenses. The software is provided
 without warranty. See [third-party notices](THIRD_PARTY.md) and
 [distribution requirements](DISTRIBUTION.md); preserve notices and provide the
 corresponding sources when distributing built artifacts.
+
+[Scheduled upstream integration proposals](UPSTREAM_SYNC.md).

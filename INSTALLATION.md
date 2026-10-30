@@ -20,7 +20,7 @@ bash install-release.sh update
 bash install-release.sh uninstall
 ```
 
-Use `--version v1.6.0-abate.1` to select a specific published stable release (replace the
+Use `--version v1.6.2-abate.1` to select a specific published stable release (replace the
 example with a released version). The installer verifies the target index and
 runtime archive against the checksums from that same release. Missing runtime
 packages are displayed and installed only after confirmation; `--yes` explicitly
@@ -38,7 +38,7 @@ Invoke-WebRequest -Uri https://github.com/nunzioricci2000/ase-studio/releases/la
 .\install-release.ps1 uninstall
 ```
 
-Use `-Version v1.6.0-abate.1`, `-Yes`, or `-LinuxUser your_linux_username` as needed.
+Use `-Version v1.6.2-abate.1`, `-Yes`, or `-LinuxUser your_linux_username` as needed.
 If your PowerShell policy blocks downloaded scripts, review the script and follow
 your organization's script approval policy. The installer does not change it.
 It reuses standard `Ubuntu-24.04` on WSL2 and offers to install it if absent.
@@ -73,12 +73,24 @@ not notarized. If Gatekeeper blocks it, review the download and use macOS
 **System Settings → Privacy & Security → Open Anyway**, when offered. Do not
 disable Gatekeeper or system-wide security checks.
 
-Updates are explicit. A new version is extracted, its SDK/compiler and server
-startup are checked with disposable data, and only then is the active version
-switched. Close Studio before updating; older versions are kept until uninstall
-so an already running app retains its files. If an update fails, fix the reported
-network, dependency or startup problem and rerun it. Concurrent installer runs
-are refused; after an interrupted process the operating system releases its lock.
+Installed applications check for stable signed updates in the background at most
+once every 24 hours. In **Updates**, choose Automatic (the default), Notify me,
+or Manual. Automatic mode downloads and verifies the package, checks its startup
+with disposable data and prepares it for the next launch. Use **Restart and update**
+when ready: saves must finish and simulations must stop first. All managed sessions
+must close before activation. The previous version remains available and is restored
+if the new backend/window fails to become ready. A failed version is not retried
+automatically. Retry explicitly with the terminal installer after correcting the cause.
+
+Selecting `--version` explicitly pins that installation in Manual mode; choose
+Automatic again in the app to remove the pin. New system dependencies require
+confirmation through the terminal installer. Network failures do not block Studio.
+The updater authenticates the release index with the bundled RSA public key and
+checks the archives against the signed hashes; it never falls back to unsigned
+updates. The initial installer is still obtained over HTTPS: inspect its provenance
+before running it. macOS ad-hoc signing and Gatekeeper are separate from this
+release-index signature. See [UPDATES.md](UPDATES.md) for recovery and operation.
+
 An unrecognized installation or modified launcher is not overwritten. Move or
 rename conflicting files yourself before retrying. If `~/.local/bin` is missing
 from PATH, the installer reports it without editing your shell configuration.
@@ -99,7 +111,7 @@ release, with equivalent access. Keep them and all license notices when
 redistributing. For source-checkout integration, see [DEVELOPING.md](DEVELOPING.md) and the [original installation guide](https://github.com/cad-polito-it/ase-studio#installation).
 
 
-The current release identity is **1.6.0 · Abate**, fork revision **1**. The tag
-`v1.6.0-abate.1` keeps the upstream version, feature package and fork revision
+The current release identity is **1.6.2 · Abate**, fork revision **1**. The tag
+`v1.6.2-abate.1` keeps the upstream version, feature package and fork revision
 separate. See [VERSIONING.md](VERSIONING.md). This naming does not itself mean a
 release is available; install only tags actually published in the fork's Releases.

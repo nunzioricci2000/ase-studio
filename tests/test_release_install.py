@@ -41,7 +41,7 @@ class InstallerTests(unittest.TestCase):
         identity = installer.parse_release_tag(version)
         (payload / 'manifest.json').write_text(json.dumps(dict(target=self.target, release_tag=version)))
         (payload / 'ase_studio/VERSION').write_text(identity['upstream_version'])
-        (payload / 'ase_studio/FORK.json').write_text(json.dumps(dict(name=identity['codename'].capitalize(), revision=identity['fork_revision'])))
+        (payload / 'ase_studio/FORK.json').write_text(json.dumps(dict(name=identity['codename'].capitalize(), revision=identity['fork_revision'], sequence=identity['fork_revision'])))
         executable = payload / 'ase-studio'
         executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
         executable.chmod(0o755)
@@ -127,7 +127,7 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaisesRegex(ValueError, 'version'):
                 self.install.install(self.payload(), self.target, tag, check=lambda *_: None)
         payload = self.payload()
-        (payload / 'ase_studio/FORK.json').write_text('{"name":"Abate","revision":2}')
+        (payload / 'ase_studio/FORK.json').write_text('{"name":"Abate","revision":2,"sequence":2}')
         with self.assertRaisesRegex(ValueError, 'version'):
             self.install.install(payload, self.target, 'v1.6.0-abate.1', check=lambda *_: None)
         self.assertFalse(self.install.current.exists())
@@ -221,13 +221,14 @@ class InstallerTests(unittest.TestCase):
         sources = [f'ase-studio-nunzio-{self.target}-sources.tar.gz', f'ase-engine-{self.target}-sources.tar.gz']
         data = {name: b'archive' for name in [runtime, *sources]}
         record = lambda name: dict(name=name, bytes=len(data[name]), sha256=hashlib.sha256(data[name]).hexdigest())
-        index = dict(schema_version=2, version=tag, **installer.parse_release_tag(tag), targets=[dict(id=self.target, runtime=record(runtime), sources=[record(n) for n in sources])])
+        index = dict(schema_version=3, version=tag, release_sequence=1, **installer.parse_release_tag(tag), targets=[dict(id=self.target, runtime=record(runtime), sources=[record(n) for n in sources])])
         data['targets.json'] = json.dumps(index).encode()
+        data['targets.json.sig'] = b'signature'
         data['SHA256SUMS'] = ''.join(f'{hashlib.sha256(value).hexdigest()}  {name}\n' for name, value in data.items()).encode()
         release = dict(tag_name=tag, draft=False, prerelease=False, assets=[dict(name=name, size=len(value), browser_download_url=base + name) for name, value in data.items()])
         def fetch(url, path):
             path.write_bytes(json.dumps(release).encode() if '/api.github.com/' in url else data[url.rsplit('/', 1)[1]])
-        with patch.object(installer, 'fetch', side_effect=fetch):
+        with patch.object(installer, 'fetch', side_effect=fetch), patch.object(installer, 'verify_signature'):
             archive, version = installer.release_download('latest', self.target, self.work)
             self.assertEqual(archive.read_bytes(), b'archive')
             self.assertEqual(version, tag)

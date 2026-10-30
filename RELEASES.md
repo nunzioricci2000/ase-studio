@@ -16,10 +16,10 @@
 
 This document covers this fork's packaging and verification. For unchanged
 application behavior, use the [original Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
-Current identity: **1.6.0 · Abate**, revision **1**, tag `v1.6.0-abate.1`.
+Current identity: **1.6.2 · Abate**, revision **1**, tag `v1.6.2-abate.1`.
 See [VERSIONING.md](VERSIONING.md) and [installation](INSTALLATION.md).
 Historical preview names and measurements below describe those original runs;
-they do not certify the unrun Abate matrix.
+they do not certify Abate. Consult the reports for the exact Abate release commit.
 
 
 Studio and its simulation engine are separate repositories and build products.
@@ -66,11 +66,11 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing the matching named fork tag, currently `v1.6.0-abate.1`, builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.2-abate.1`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
 SHA-256 again. It checks VERSION and FORK.json against the package evidence and
-generates standalone Bash/PowerShell installers, the schema-2 target index and
+generates standalone Bash/PowerShell installers, the signed schema-3 target index and
 checksums alongside the aggregate report. Drafts are explicitly marked stable;
 the codename suffix is not a prerelease flag. Review the draft
 against `DISTRIBUTION.md` before publishing it; a main push alone uploads Actions
@@ -218,3 +218,20 @@ The Ubuntu Chromium job measures this collection, reuses checksum-verified
 downloads through Actions cache and uploads `studio-dependency-sources` for
 14 days. It is collected once per workflow, since the sources are common to
 all supported hosts. Each platform still builds and tests its own runtime.
+
+
+<!-- Modified in the personal fork on 2026-10-30: require a protected signing environment and document upstream proposal automation. -->
+## Signed Abate releases
+
+The draft job uses the `release-signing` environment and its `RELEASE_SIGNING_KEY`
+secret. Only validated `v*` tags of the current main tip may reach it. The RSA-3072
+private key remains outside source archives and logs; `release-public.pem` is the
+trust root distributed with the app and standalone installer. A missing key or a
+mismatch against the public key blocks draft preparation. `targets.json.sig`
+authenticates the exact schema-3 index bytes; SHA256SUMS also inventories the signature.
+Keep the sequence in FORK.json monotonically increasing and explicitly select the
+intended stable release as GitHub's latest when publishing. A draft is never offered
+to the application updater.
+
+[Update behavior, recovery and key rotation](UPDATES.md) and
+[upstream integration automation](UPSTREAM_SYNC.md) describe the maintenance flows.

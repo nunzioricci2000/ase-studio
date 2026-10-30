@@ -22,10 +22,12 @@ def read_version(root):
     upstream = (root / 'VERSION').read_text().strip()
     fork = json.loads((root / 'FORK.json').read_text())
     name, revision = fork['name'], fork['revision']
+    sequence = fork.get('sequence')
     if (not re.fullmatch(UPSTREAM_PATTERN, upstream) or not isinstance(name, str)
-            or not re.fullmatch(r'[A-Z][a-z]+', name) or type(revision) is not int or revision < 1):
+            or not re.fullmatch(r'[A-Z][a-z]+', name) or type(revision) is not int or revision < 1
+            or type(sequence) is not int or sequence < 1):
         raise ValueError('Invalid upstream version or fork identity')
     tag = f'v{upstream}-{name.lower()}.{revision}'
     parse_release_tag(tag)
     return dict(upstream_version=upstream, codename=name.lower(), fork_name=name,
-                fork_revision=revision, release_tag=tag, display_version=f'{upstream} · {name}')
+                fork_revision=revision, release_sequence=sequence, release_tag=tag, display_version=f'{upstream} · {name}')

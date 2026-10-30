@@ -90,7 +90,7 @@ Additional native and integration checks:
 The named release identity is shared by `versioning.py`, `VERSION` and
 `FORK.json`; see [VERSIONING.md](VERSIONING.md). The backend keeps the numeric
 `version` API field for compatibility and exposes `displayVersion`, `releaseTag`
-and the fork name/revision separately. The About view displays `1.6.0 · Abate`.
+and the fork name/revision separately. The About view displays `1.6.2 · Abate`.
 
 Packaging tests run external scripts against the installed final archive; those
 tools are not included in the runtime. Release-installer tests cover version

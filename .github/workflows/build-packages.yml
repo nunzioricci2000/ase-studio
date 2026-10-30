@@ -218,6 +218,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
   draft-release:
+    environment: release-signing
     if: startsWith(github.ref, 'refs/tags/') && needs.report.outputs.release_ready == 'true'
     needs: report
     runs-on: ubuntu-24.04
@@ -236,9 +237,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         shell: bash
         run: |
           python3 scripts/package-report.py --artifacts artifacts --output artifacts/studio-build-report --verify-release
+          umask 077
+          export ASE_RELEASE_SIGNING_KEY_FILE="$RUNNER_TEMP/release-signing-key.pem"
+          trap 'rm -f "$ASE_RELEASE_SIGNING_KEY_FILE"' EXIT
+          test -n "$RELEASE_SIGNING_KEY"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$ASE_RELEASE_SIGNING_KEY_FILE"
+          unset RELEASE_SIGNING_KEY
           python3 scripts/release-assets.py --artifacts artifacts --output artifacts/studio-build-report \
             --version "$TAG" --revision "$GITHUB_SHA"
           mapfile -t files < artifacts/studio-build-report/release-files.txt

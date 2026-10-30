@@ -7,7 +7,8 @@ const filename = GLib.build_filenamev([
   "frontend", "studio.js"
 ]);
 const [, bytes] = GLib.file_get_contents(filename);
-const source = new TextDecoder().decode(bytes);
+// Modified in the personal fork on 2026-10-30: allow the fork's static ES-module imports when parsing the shared UI fixture.
+const source = new TextDecoder().decode(bytes).replace(/^import .*?;\s*$/gm, "");
 new Function(source);
 function equal(actual, expected) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
