@@ -91,3 +91,19 @@ Release-index signing and verification invoke the host's OpenSSL command as a
 separate program. No OpenSSL implementation is copied into the updater, and this
 fork does not relicense the system executable. Runtime dependency recipes install
 the distribution-provided command; SDK source/license obligations remain unchanged.
+
+<!-- Modified in the personal fork on 2026-10-30: identify private source-paired macOS engine libraries. -->
+The macOS packages supply Protobuf 36.1 (ARM64) or 36.0 (Intel), under
+BSD-3-Clause, with its MIT-licensed utf8_range component, and Abseil 20260817.0
+under Apache-2.0. These libraries are used by the separate BSD-licensed gem5
+executable. They are not linked into the GPL-2.0-only Studio application and are
+not relicensed as GPL. Apache-2.0 is not asserted to be GPL-2.0 compatible.
+
+`scripts/macos-runtime.lock.json` pins the exact Homebrew bottles, source archives
+and build recipes. Packaging copies only gem5's required library dependency
+closure, relocates the dylib references and renews ad-hoc signatures; it does not
+compile gem5 or alter the user's Homebrew installation. The application carries
+all source-archive LICENSE/NOTICE/COPYING files, recipes, relocation notice and
+hash manifest in `engine/licenses/macos-runtime`. The matching Studio source
+archive includes exact library sources, original bottles and recipes in
+`sources/dependencies`. Homebrew's BSD-2-Clause license accompanies its recipes.

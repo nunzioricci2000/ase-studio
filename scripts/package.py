@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: bundle source-paired private macOS engine libraries before signing.
 # Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: package independent upstream and Abate release metadata.
@@ -24,6 +25,7 @@ import tempfile
 import time
 
 from check import Report, utc
+import macos_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('frontend_sources', ROOT / 'scripts/frontend-sources.py')
@@ -253,6 +255,8 @@ def main():
         report.run('frontend-build', ['npm', 'run', 'build'], env=dict(os.environ,
                    ASE_FRONTEND_REPORT=str(output / 'frontend-inputs.json')))
         sources = measure(report, 'verify-frontend-sources', lambda: frontend_sources.verify(dependencies))
+        if engine_report['target']['family'] == 'macos':
+            sources += measure(report, 'verify-macos-runtime-inputs', lambda: macos_runtime.verify(dependencies, target))
         metadata = provenance()
         report.data['studio_source_dirty'] = metadata['dirty']
         with tempfile.TemporaryDirectory(prefix='ase-studio-package-') as directory:
@@ -268,6 +272,9 @@ def main():
             engine.rename(resources / 'engine')
             engine = resources / 'engine'
             trim_engine(engine)
+            if macos:
+                report.data['private_libraries'] = measure(report, 'stage-macos-runtime',
+                    lambda: macos_runtime.stage(engine, dependencies, target))
             studio = resources / 'ase_studio'
             measure(report, 'stage-studio', lambda: export_runtime(studio, metadata))
             if macos:
@@ -314,6 +321,8 @@ def main():
             (work / 'sources/BUILD.txt').write_text(
                 'The project directory contains the exact preferred Studio sources and build scripts.\n'
                 'The dependencies directory supplies preferred editable upstream sources and npm inputs.\n'
+                'On macOS it also includes exact engine-library sources, original bottles and Homebrew recipes; '
+                'scripts/macos_runtime.py selects and relocates only the required shared libraries.\n'
                 'Keep the matching ase-engine-TARGET-sources.tar.gz beside this archive.\n'
                 'Install Node/npm and the native platform build/runtime tools described in project/RELEASES.md.\n'
                 'From project/: python3 scripts/package.py --sdk-artifact /path/to/verified/engine/artifact '

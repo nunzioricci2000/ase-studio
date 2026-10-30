@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- Modified in the personal fork on 2026-10-30: describe private macOS engine libraries and their source archives. -->
 <!-- Created in the personal fork on 2026-10-30: collect installation and recovery instructions specific to the fork's release packages. -->
 # Installing the Abate packages
 
@@ -73,6 +74,9 @@ not notarized. If Gatekeeper blocks it, review the download and use macOS
 **System Settings → Privacy & Security → Open Anyway**, when offered. Do not
 disable Gatekeeper or system-wide security checks.
 
+The exact Protobuf/Abseil libraries required by gem5 are private to the macOS
+application. The installer does not downgrade or replace shared Homebrew copies.
+
 Installed applications check for stable signed updates in the background at most
 once every 24 hours. In **Updates**, choose Automatic (the default), Notify me,
 or Manual. Automatic mode downloads and verifies the package, checks its startup
@@ -105,7 +109,8 @@ any custom project paths are also retained.
 Runtime archives omit development tools, tests, assistant instructions and
 editable editor sources already incorporated into the bundle. The matching
 `ase-studio-nunzio-TARGET-sources.tar.gz` contains the complete project/build
-sources and frontend dependency sources; `ase-engine-TARGET-sources.tar.gz`
+sources, frontend dependency sources and, on macOS, exact private-library sources,
+original bottles and build recipes; `ase-engine-TARGET-sources.tar.gz`
 contains the corresponding SDK sources. Both remain separate assets of the same
 release, with equivalent access. Keep them and all license notices when
 redistributing. For source-checkout integration, see [DEVELOPING.md](DEVELOPING.md) and the [original installation guide](https://github.com/cad-polito-it/ase-studio#installation).

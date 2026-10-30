@@ -1,4 +1,5 @@
 # Modified in the personal fork on 2026-10-30: version release-installer regression coverage.
+# Modified in the personal fork on 2026-10-30: version private macOS library safety coverage.
 # Modified in the personal fork on 2026-10-28: version portable-runtime regression coverage.
 # Modified in the personal fork on 2026-10-28: version archive-integrity and distribution-source coverage.
 __pycache__/
@@ -22,3 +23,4 @@ tests/*
 !tests/pipeline-scroll.test.mjs
 !tests/update-ui-server.py
 !tests/update-browser.mjs
+!tests/test_macos_runtime.py

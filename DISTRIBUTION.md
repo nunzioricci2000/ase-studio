@@ -76,3 +76,10 @@ public verification key. Do not include private signing keys or automation token
 in any archive. Verify the release-index signature as well as all archive hashes.
 A native-readiness rollback check and the managed-session update tests are required
 before release; WSLg and Start-menu checks still require a real Windows desktop.
+
+<!-- Modified in the personal fork on 2026-10-30: require exact macOS engine-library provenance. -->
+macOS packages also carry the pinned Protobuf/Abseil library closure for gem5,
+its own licenses and a manifest of original and relocated hashes. Include the
+matching sources, original bottles and Homebrew recipes from the Studio source
+archive. Verify the installed application and its signature after relocation;
+do not substitute a newer ABI or globally downgrade the user's Homebrew packages.

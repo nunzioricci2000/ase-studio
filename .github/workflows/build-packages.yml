@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: authenticate source-paired macOS runtime bottles before packaging.
 # Created in the personal fork on 2026-10-28: package and test Studio against pinned prebuilt engines.
 # Modified in the personal fork on 2026-10-28: build and exercise native macOS application bundles too.
 # Modified in the personal fork on 2026-10-28: retain administrative executable paths in Debian/Ubuntu containers.
@@ -46,9 +47,11 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/studio-dependency-sources
-          key: studio-sources-${{ hashFiles('scripts/frontend-sources.lock.json', 'package-lock.json') }}
+          key: studio-sources-${{ hashFiles('scripts/frontend-sources.lock.json', 'scripts/macos-runtime.lock.json', 'package-lock.json') }}
       - name: Verify preferred frontend sources once per workflow
-        run: python3 scripts/frontend-sources.py --output "$RUNNER_TEMP/studio-dependency-sources"
+        run: |
+          python3 scripts/frontend-sources.py --output "$RUNNER_TEMP/studio-dependency-sources"
+          python3 scripts/macos_runtime.py --output "$RUNNER_TEMP/studio-dependency-sources"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: studio-dependency-sources

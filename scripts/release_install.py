@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-30: use the bundled exact macOS Protobuf/Abseil ABI instead of unpinned Homebrew libraries.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: verify named fork identities independently of upstream versions.
 # Created in the personal fork on 2026-10-30: verified release downloads, runtime dependencies and transactional per-user installation.
@@ -100,7 +101,7 @@ def dependencies(target, yes=False, check_only=False):
                     break
         if not brew:
             raise RuntimeError('Homebrew is required. Install it following https://brew.sh then rerun this installer.')
-        packages = 'gmp mpfr libmpc openssl@3 libffi xz sqlite readline gettext protobuf'.split()
+        packages = 'gmp mpfr libmpc openssl@3 libffi xz sqlite readline gettext'.split()
         installed = set(subprocess.check_output([brew, 'list', '--formula'], text=True).split())
         missing = [p for p in packages if p not in installed]
         commands = [[brew, 'install', *missing]] if missing else []

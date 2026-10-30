@@ -235,3 +235,12 @@ to the application updater.
 
 [Update behavior, recovery and key rotation](UPDATES.md) and
 [upstream integration automation](UPSTREAM_SYNC.md) describe the maintenance flows.
+
+<!-- Modified in the personal fork on 2026-10-30: pin private macOS SDK libraries and their complete sources. -->
+Per preparare i pacchetti macOS, eseguire anche
+`python3 scripts/macos_runtime.py --output /percorso/dependency-sources` nella
+stessa directory usata per i sorgenti frontend. Il lock include le versioni di
+Protobuf e Abseil richieste dagli SDK, le bottiglie precompilate e i loro sorgenti
+con ricette Homebrew. Il packaging seleziona le librerie effettivamente usate da
+gem5, ne adatta i riferimenti locali e le firma prima della firma del bundle.
+La ricostruzione dall'archivio sorgente riutilizza questi stessi input verificati.
