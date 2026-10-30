@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: accept native verification scripts from outside the application.
 # Created in the personal fork on 2026-10-28: launch a prebuilt SDK with persistent data outside the application.
 # Modified in the personal fork on 2026-10-28: keep a stable preferred port for webview preferences across launches.
 # Modified in the personal fork on 2026-10-28: support isolated native-window validation of installed Linux packages.
@@ -66,11 +67,14 @@ def main():
     parser.add_argument('--data', type=Path, default=default_data())
     parser.add_argument('--port', type=int, default=os.environ.get('ASE_STUDIO_PORT', '8765'))
     parser.add_argument('--native-smoke-report', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--native-smoke-script', type=Path, help=argparse.SUPPRESS)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--server', action='store_true', help='Serve the native macOS webview')
     mode.add_argument('--browser', action='store_true', help='Open the interface in the system browser')
     mode.add_argument('--check', action='store_true', help='Validate startup without opening a window')
     args = parser.parse_args()
+    if bool(args.native_smoke_report) != bool(args.native_smoke_script):
+        parser.error('Supply both external native smoke script and report')
     if args.native_smoke_report and (args.server or args.browser or args.check):
         parser.error('Native smoke validation requires the native window')
     if os.name == 'nt':
@@ -91,7 +95,8 @@ def main():
     if args.browser:
         command.append('--open')
     if args.native_smoke_report:
-        command.extend(['--smoke-report', str(args.native_smoke_report.resolve())])
+        command.extend(['--smoke-report', str(args.native_smoke_report.resolve()),
+                        '--smoke-script', str(args.native_smoke_script.resolve())])
     os.execve(sys.executable, command, env)
 
 

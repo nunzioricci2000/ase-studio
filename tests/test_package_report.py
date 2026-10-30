@@ -1,13 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: require matching named fork identities in release evidence.
+# Modified in the personal fork on 2026-10-30: cover final-archive installation evidence.
 # Created in the personal fork on 2026-10-28: reject incomplete build evidence and corrupted release archives.
 import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from versioning import read_version
 spec = importlib.util.spec_from_file_location('package_report', ROOT / 'scripts/package-report.py')
 report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
@@ -44,7 +49,7 @@ class PackageReportTests(unittest.TestCase):
         self.jobs.append(self.job('package (' + target + ', runner)'))
         root = self.root / ('studio-report-' + target)
         macos = target.startswith('macos-')
-        stages = ['installed-backend', 'installed-native-window', 'verify-frontend-sources',
+        stages = ['install-final-archive', 'installed-backend', 'installed-native-window', 'verify-frontend-sources',
                   'studio-sources', 'engine-sources', 'archive']
         if macos:
             stages += ['native-build', 'ad-hoc-sign', 'verify-signature', 'verify-unchanged-app']
@@ -57,7 +62,7 @@ class PackageReportTests(unittest.TestCase):
             path.write_bytes(data)
             assets.append(dict(name=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
         package = dict(status='succeeded', git_sha=self.revision, studio_source_dirty=False,
-                       target={'id': target}, artifacts=assets, wall_seconds=10,
+                       version=(ROOT / 'VERSION').read_text().strip(), release=read_version(ROOT), target={'id': target}, artifacts=assets, wall_seconds=10,
                        stages=[dict(name=name, status='succeeded') for name in stages])
         self.write(root / 'studio-output/report.json', package)
         self.write(root / 'studio-output/runtime/runtime-report.json', self.backend())
@@ -81,6 +86,40 @@ class PackageReportTests(unittest.TestCase):
         self.assertEqual(result['targets'][0]['job_wall_seconds'], 120)
         self.assertEqual(len(report.verify_archives(result, self.root)), 6)
         self.assertIn('source-archive-rebuild', report.markdown(result))
+
+    def test_release_assets_require_installed_version_and_verified_archives(self):
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        spec = importlib.util.spec_from_file_location('release_assets', ROOT / 'scripts/release-assets.py')
+        assets = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(assets)
+        root = self.target()
+        output = self.root / 'release'
+        self.write(output / 'build-report.json', self.aggregate())
+        version = read_version(ROOT)['release_tag']
+        assets.generate(self.root, output, version, self.revision)
+        index = report.read(output / 'targets.json')
+        self.assertEqual(index['version'], version)
+        self.assertEqual(len(index['targets'][0]['sources']), 2)
+        self.assertEqual(index['schema_version'], 2)
+        self.assertEqual(index['fork_name'], 'Abate')
+        self.assertEqual(index['upstream_version'], (ROOT / 'VERSION').read_text().strip())
+        stale = self.aggregate()
+        stale['targets'][0]['package']['release']['fork_revision'] += 1
+        self.write(output / 'build-report.json', stale)
+        with self.assertRaisesRegex(ValueError, 'version mismatch'):
+            assets.generate(self.root, output, version, self.revision)
+        self.write(output / 'build-report.json', self.aggregate())
+        from release_install import checksums, verify
+        sums = checksums(output / 'SHA256SUMS')
+        for name in ('targets.json', 'install-release.sh', 'install-release.ps1', 'LICENSE'):
+            verify(output / name, sums[name])
+        import subprocess
+        subprocess.run(['bash', '-n', str(output / 'install-release.sh')], check=True)
+        self.change(root / 'studio-output/report.json', lambda d: d['stages'].pop(0))
+        self.write(output / 'build-report.json', self.aggregate())
+        with self.assertRaises(ValueError):
+            assets.generate(self.root, output, version, self.revision)
 
     def test_missing_target_report_blocks_release(self):
         self.target()

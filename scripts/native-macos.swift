@@ -3,6 +3,7 @@
 // Modified in the personal fork on 2026-10-28: isolate packaged application checks and require clean backend shutdown.
 // Modified in the personal fork on 2026-10-28: keep signed application resources free of Python bytecode writes.
 // Modified in the personal fork on 2026-10-28: open the packaged test project before requiring Monaco's rendered editor.
+// Modified in the personal fork on 2026-10-30: load native verification JavaScript from an explicit external path.
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
@@ -357,9 +358,9 @@ final class StudioApplication: NSObject, NSApplicationDelegate, NSWindowDelegate
     func pollTest() {
         guard let view = mainView else { return }
         if testingApplication {
-            guard let resource = Bundle.main.resourceURL?.appendingPathComponent("ase_studio/scripts/native-smoke.js"),
-                  let script = try? String(contentsOf: resource, encoding: .utf8) else {
-                fail("The packaged native test script is missing"); return
+            guard let path = argument("--smoke-script"),
+                  let script = try? String(contentsOfFile: path, encoding: .utf8) else {
+                fail("An external --smoke-script is required"); return
             }
             view.evaluateJavaScript(script) { [weak self] value, error in
                 guard let self = self, error == nil, let text = value as? String,

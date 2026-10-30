@@ -3,6 +3,7 @@ import {createSourceEditor} from './vendor/editor.js';
 /*
  * SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
  * SPDX-License-Identifier: GPL-2.0-only
+ * Modified in the personal fork on 2026-10-30: show the upstream version and named fork package together.
  * Modified in the personal fork on 2026-10-27: name Nunzio's app, autosave without overlapping writes and distinguish unknown registers.
  */
 const STUDIO_NAME = "ASE Studio di Nunzio";
@@ -189,7 +190,7 @@ async function loadStudioVersion() {
   try {
     const health = await api("/api/health");
     o3Defaults = health.o3Defaults || {};
-    $("#about-version").textContent = `Version ${health.version}`;
+    $("#about-version").textContent = `Version ${health.displayVersion || health.version}`;
     applyDeveloperFeatures(health.features || {});
   } catch (_error) {
     $("#about-version").textContent = "Version unavailable";

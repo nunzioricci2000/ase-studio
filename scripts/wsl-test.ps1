@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: verify the packaged Studio backend and native GTK editor under Windows WSL2.
+# Modified in the personal fork on 2026-10-30: install the final archive and run verification tools from the external checkout.
 $ErrorActionPreference = 'Stop'
 $outDir = Join-Path $env:RUNNER_TEMP 'studio-wsl-report'
 $artifact = Join-Path $env:GITHUB_WORKSPACE 'artifact'
@@ -72,22 +73,33 @@ uname -r | grep -Ei 'microsoft.*WSL2|microsoft-standard'
 work=$(mktemp -d /tmp/ase-studio-wsl-XXXXXX)
 mkdir -p "$work/results" "$2/runtime"
 trap 'cp -a "$work/results/." "$2/runtime/"' EXIT
-tar -xf "$1/ase-studio-nunzio-ubuntu-24.04-x86_64.tar.gz" -C "$work"
-app="$work/ase-studio-nunzio-ubuntu-24.04-x86_64"
-bash "$app/ase_studio/scripts/runtime-dependencies.sh" debian
+bash "$3/scripts/runtime-dependencies.sh" debian
+app="$work/Installed Home With Spaces/.local/opt/ase-studio/current"
 id studio-check >/dev/null 2>&1 || useradd --create-home studio-check
 mkdir -p "$work/data/programs/native-smoke"
 printf '.text\n.globl _start\n_start:\n li a0, 0\n li a7, 93\n ecall\n' > "$work/data/programs/native-smoke/main.s"
 printf 'include $(ASE_STUDIO_DEMO_MK)\n' > "$work/data/programs/native-smoke/Makefile"
 chown -R studio-check:studio-check "$work"
-runuser -u studio-check -- python3 "$app/ase_studio/scripts/smoke-package.py" \
+runuser -u studio-check -- python3 - "$3/scripts" "$1" "$work" <<'PYINSTALL'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from release_install import Installation, extract_runtime, read_version
+work = Path(sys.argv[3])
+target = 'ubuntu-24.04-x86_64'
+payload = extract_runtime(Path(sys.argv[2]) / f'ase-studio-nunzio-{target}.tar.gz', work / 'unpacked', target)
+installation = Installation(work / 'Installed Home With Spaces')
+with installation.lock():
+    installation.install(payload, target, read_version(payload / 'ase_studio')['release_tag'])
+PYINSTALL
+runuser -u studio-check -- python3 "$3/scripts/smoke-package.py" \
   --studio "$app/ase_studio" --engine "$app/engine" --python "$app/engine/python/bin/python3.10" --output "$work/results/backend"
 runuser -u studio-check -- env GDK_BACKEND=x11 xvfb-run -a "$app/ase-studio" --data "$work/data" --port 0 \
-  --native-smoke-report "$work/results/native-runtime.json"
+  --native-smoke-report "$work/results/native-runtime.json" --native-smoke-script "$3/scripts/native-smoke.js"
 '@
         $scriptPath = Join-Path $outDir 'wsl-smoke.sh'
         [IO.File]::WriteAllText($scriptPath, ($script -replace "`r", ''), [Text.UTF8Encoding]::new($false))
-        Wsl -d Ubuntu-24.04 -u root --exec bash (LinuxPath $scriptPath) (LinuxPath $artifact) (LinuxPath $outDir)
+        Wsl -d Ubuntu-24.04 -u root --exec bash (LinuxPath $scriptPath) (LinuxPath $artifact) (LinuxPath $outDir) (LinuxPath $env:GITHUB_WORKSPACE)
     }
     $report.status = 'succeeded'
 } catch {

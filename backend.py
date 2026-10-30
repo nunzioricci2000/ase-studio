@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-30: expose upstream and named fork versions separately.
 # Modified in the personal fork on 2026-10-27: preserve initial register snapshots and bind writes to completed instructions.
 # Modified in the personal fork on 2026-10-28: resolve packaged build/configuration resources outside persistent user data.
 # Modified in the personal fork on 2026-10-28: use native macOS application selection and submission reveal actions.
@@ -44,7 +45,10 @@ PROGRAMS = ROOT / "programs"
 SUBMISSIONS = ROOT / "submissions"
 RESULTS = ROOT / "results"
 FRONTEND = STUDIO_ROOT / "frontend"
-STUDIO_VERSION = (STUDIO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+sys.path.insert(0, str(STUDIO_ROOT))
+from versioning import read_version
+STUDIO_RELEASE = read_version(STUDIO_ROOT)
+STUDIO_VERSION = STUDIO_RELEASE["upstream_version"]
 ENVIRONMENT_CONFIG = ROOT / ".ase-studio-env.json"
 ENVIRONMENT_FIELDS = (
     "PROGRAMS_DIRECTORY", "SUBMISSION_DIRECTORY",
@@ -5056,7 +5060,7 @@ def create_submission(projects, assignment, attachments=None, expand_loops=False
     content_hash = hashlib.sha256(canonical_files).hexdigest()
     manifest = {
         "schemaVersion": 2,
-        "generatedBy": f"ASE Studio {STUDIO_VERSION}",
+        "generatedBy": f"ASE Studio {STUDIO_RELEASE['display_version']} (revision {STUDIO_RELEASE['fork_revision']})",
         "submittedAt": submitted_at,
         "assignment": assignment,
         "submissionName": archive_stem,
@@ -5537,6 +5541,10 @@ class Handler(SimpleHTTPRequestHandler):
             if url.path == "/api/health":
                 return self.send_json({"ok": True, "apiVersion": STUDIO_API_VERSION,
                                        "version": STUDIO_VERSION,
+                                       "displayVersion": STUDIO_RELEASE["display_version"],
+                                       "releaseTag": STUDIO_RELEASE["release_tag"],
+                                       "fork": {"name": STUDIO_RELEASE["fork_name"],
+                                                "revision": STUDIO_RELEASE["fork_revision"]},
                                        "o3Defaults": DEFAULT_O3_CONFIG,
                                        "features": {
                                            "developerMode": DEVELOPER_MODE,

@@ -11,7 +11,16 @@
 <!-- Modified in the personal fork on 2026-10-28: record the complete eight-target preview and verified Windows/source rebuild checks. -->
 <!-- Modified in the personal fork on 2026-10-28: automate aggregate timing reports and verified drafts for stable version tags. -->
 <!-- Modified in the personal fork on 2026-10-28: add the tested Intel engine to the native macOS package matrix. -->
+<!-- Modified in the personal fork on 2026-10-30: describe Abate naming, final-archive checks and fork-only documentation. -->
 # Studio distribution workflow
+
+This document covers this fork's packaging and verification. For unchanged
+application behavior, use the [original Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
+Current identity: **1.6.0 · Abate**, revision **1**, tag `v1.6.0-abate.1`.
+See [VERSIONING.md](VERSIONING.md) and [installation](INSTALLATION.md).
+Historical preview names and measurements below describe those original runs;
+they do not certify the unrun Abate matrix.
+
 
 Studio and its simulation engine are separate repositories and build products.
 Studio's pipeline must consume a verified, source-paired engine SDK for each host
@@ -37,7 +46,8 @@ The package workflow downloads the pinned public engine release, verifies its
 report checksum, revision and both archive checksums, builds the frontend and
 tests the installed application with isolated disposable projects. It executes
 eight simulations through the real HTTP API, opens the native window with Monaco,
-and checks backend shutdown before producing a package. No gem5, Python or RISC-V
+and checks backend shutdown against the installed final archive. Smoke scripts
+are supplied externally and are not distributed inside the application. No gem5, Python or RISC-V
 toolchain compilation occurs in this workflow. Linux tests run inside the target
 distribution with prebuilt system GTK/WebKit and SDK runtime libraries.
 
@@ -56,10 +66,13 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing a version tag such as `v1.6.1` builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.0-abate.1`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
-SHA-256 again and includes the aggregate report and checksums. Review the draft
+SHA-256 again. It checks VERSION and FORK.json against the package evidence and
+generates standalone Bash/PowerShell installers, the schema-2 target index and
+checksums alongside the aggregate report. Drafts are explicitly marked stable;
+the codename suffix is not a prerelease flag. Review the draft
 against `DISTRIBUTION.md` before publishing it; a main push alone uploads Actions
 artifacts and reports, without creating a public release.
 
