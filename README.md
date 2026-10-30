@@ -4,14 +4,15 @@
 <!-- Modified in the personal fork on 2026-10-27: document measured Studio CI and the corrected O3 engine check. -->
 <!-- Modified in the personal fork on 2026-10-28: link verified portable desktop packages and explain their runtime requirements. -->
 <!-- Modified in the personal fork on 2026-10-30: lead with installation and document only fork additions, linking upstream for general usage. -->
+<!-- Modified in the personal fork on 2026-10-30: finalize installation guidance for the stable Abate release. -->
 ```bash
 curl --proto '=https' --proto-redir '=https' -fL -o install-release.sh \
   https://github.com/nunzioricci2000/ase-studio/releases/latest/download/install-release.sh &&
 bash install-release.sh install
 ```
 
-Linux/macOS, as your normal user. **The command becomes usable after a stable
-release containing the new installer assets is published.**
+Linux/macOS, as your normal user. The command uses the latest stable release;
+it requires the standalone installer assets supplied with Abate.
 [Windows installation, updates, uninstall and recovery](INSTALLATION.md).
 
 # ASE Studio di Nunzio · Abate
