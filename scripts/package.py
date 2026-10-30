@@ -362,8 +362,21 @@ def main():
                     '--port', '0', '--native-smoke-report', str(output / 'native-runtime.json'),
                     '--native-smoke-script', str(ROOT / 'scripts/native-smoke.js')]
             report.run('installed-native-window', native_command, timeout=120)
+            # Reinstall the immutable archive into a queue and exercise the real
+            # supervisor/native readiness protocol using only a disposable HOME.
+            queued = extract_runtime(archive, work / 'queued-archive', target)
+            measure(report, 'prepare-managed-update', lambda: installed.install(
+                queued, target, version=identity['release_tag'], activate=False))
+            (installed.root / 'updates.json').write_text('{"mode":"manual"}\n')
+            supervisor = [sys.executable, str(studio / 'updates.py'), '--home', str(installed.home), 'launch', '--']
+            supervised = (supervisor + native_command[1:] if macos else
+                          native_command[:2] + supervisor + native_command[3:])
+            managed_env = dict(os.environ, HOME=str(installed.home))
+            report.run('managed-update-window', supervised, timeout=180, env=managed_env)
+            if installed.active()[0] == folder or (installed.root / 'activation.json').exists():
+                raise ValueError('Managed native update did not activate and acknowledge readiness')
             if macos:
-                report.run('verify-unchanged-app', ['codesign', '--verify', '--deep', '--strict', str(app)])
+                report.run('verify-unchanged-app', ['codesign', '--verify', '--deep', '--strict', str(installed.active()[0] / 'ASE Studio di Nunzio.app')])
             artifacts = [output / source_name, output / engine_source, archive]
             report.data['artifacts'] = [dict(name=path.name, bytes=path.stat().st_size, sha256=checksum(path)) for path in artifacts]
             (output / 'SHA256SUMS').write_text(''.join(f'{item["sha256"]}  {item["name"]}\n' for item in report.data['artifacts']))

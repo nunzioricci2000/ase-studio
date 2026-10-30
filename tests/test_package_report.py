@@ -50,7 +50,7 @@ class PackageReportTests(unittest.TestCase):
         self.jobs.append(self.job('package (' + target + ', runner)'))
         root = self.root / ('studio-report-' + target)
         macos = target.startswith('macos-')
-        stages = ['install-final-archive', 'installed-backend', 'installed-native-window', 'verify-frontend-sources',
+        stages = ['prepare-managed-update', 'managed-update-window', 'install-final-archive', 'installed-backend', 'installed-native-window', 'verify-frontend-sources',
                   'studio-sources', 'engine-sources', 'archive']
         if macos:
             stages += ['native-build', 'ad-hoc-sign', 'verify-signature', 'verify-unchanged-app']

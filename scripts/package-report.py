@@ -71,7 +71,7 @@ def aggregate(artifacts, matrix, jobs, revision):
                 row['errors'].append('Package status, revision, target or release identity mismatch')
             if not backend_ok(row['backend']):
                 row['errors'].append('Incomplete or failed installed backend checks')
-            required = {'install-final-archive', 'installed-backend', 'installed-native-window', 'verify-frontend-sources',
+            required = {'prepare-managed-update', 'managed-update-window', 'install-final-archive', 'installed-backend', 'installed-native-window', 'verify-frontend-sources',
                         'studio-sources', 'engine-sources', 'archive'}
             macos = target.startswith('macos-')
             if macos:

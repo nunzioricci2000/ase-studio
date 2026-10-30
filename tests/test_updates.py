@@ -52,6 +52,13 @@ class UpdateTests(unittest.TestCase):
             self.controller._check(download)
         return self.controller.status()
 
+    def test_home_alias_resolves_to_the_same_managed_installation(self):
+        alias = self.fixture.work / 'aliased-home'
+        alias.symlink_to(self.fixture.home, target_is_directory=True)
+        alternate = installer.Installation(alias, macos=False)
+        self.assertEqual(alternate.root, self.install.root)
+        self.assertEqual(alternate.active()[0], self.old)
+
     def test_manual_and_daily_policy_do_not_start_network(self):
         self.controller.configure('manual')
         with patch.object(updates.threading, 'Thread') as thread:

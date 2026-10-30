@@ -313,11 +313,12 @@ def launch(installation, arguments):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--home', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('action', choices=['launch'])
     parser.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
-    return launch(Installation(), arguments)
+    return launch(Installation(home=args.home), arguments)
 
 
 if __name__ == '__main__':

@@ -403,9 +403,10 @@ def startup(payload, macos):
 
 class Installation:
     def __init__(self, home=None, macos=None):
-        self.home = (home or Path.home()).absolute()
+        self.home = (home or Path.home()).resolve()
         self.macos = platform.system() == 'Darwin' if macos is None else macos
-        self.root = self.home / ('Applications/.ase-studio' if self.macos else '.local/opt/ase-studio')
+        root = self.home / ('Applications/.ase-studio' if self.macos else '.local/opt/ase-studio')
+        self.root = root.parent.resolve() / root.name
         if any(c in str(self.home) for c in '\n\r'):
             raise ValueError('Home directory contains a line break')
         self.current = self.root / 'current'
