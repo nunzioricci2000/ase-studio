@@ -6,6 +6,7 @@
 # Modified in the personal fork on 2026-10-28: measure optional collection of corresponding frontend dependency sources.
 # Modified in the personal fork on 2026-10-28: share timing reports with package builds from supplied source archives.
 """Check the frontend without requiring or rebuilding the simulator SDK."""
+# Modified in the personal fork on 2026-10-30: exercise the real managed-update dialog in Chromium.
 import argparse
 from datetime import datetime, timezone
 import json
@@ -122,6 +123,7 @@ def main():
             if not os.getenv('CHROMIUM_PATH'):
                 report.run('browser-install', ['npx', '--no-install', 'playwright', 'install', 'chromium'])
             report.run('chromium', ['npm', 'run', 'test:browser'], timeout=120)
+            report.run('release-update-ui', ['node', 'tests/update-browser.mjs'], timeout=120)
         else:
             webview(report, 'webkitgtk', ['xvfb-run', '-a', sys.executable, 'tests/webkit.py'])
         if sys.platform == 'darwin':

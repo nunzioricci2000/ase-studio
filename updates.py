@@ -3,6 +3,7 @@
 # Created in the personal fork on 2026-10-30: signed background updates, coordinated activation, native readiness and rollback.
 """Release update controller and independent session supervisor; no Git operations."""
 import argparse
+from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -200,6 +201,23 @@ def authorized(headers, port, token):
             and secrets.compare_digest(headers.get('X-ASE-Update-Token', ''), token))
 
 
+@contextmanager
+def selection_lock(installation):
+    """A background download must not prevent another session opening the active app."""
+    lock = installation.lock()
+    try:
+        lock.__enter__()
+    except RuntimeError as error:
+        if 'Another ASE Studio installer' not in str(error):
+            raise
+        yield False
+    else:
+        try:
+            yield True
+        finally:
+            lock.__exit__(None, None, None)
+
+
 def launch(installation, arguments):
     """Supervise a native session, keeping its version alive until all processes exit."""
     installation.initialize()
@@ -210,11 +228,11 @@ def launch(installation, arguments):
         process = None
         try:
             # Serialize selection with the CLI and acquire a session lock before releasing .lock.
-            with installation.lock():
+            with selection_lock(installation) as can_activate:
                 session = (installation.root / '.sessions.lock').open('a+')
                 try:
-                    fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    exclusive = True
+                    fcntl.flock(session, (fcntl.LOCK_EX if can_activate else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+                    exclusive = can_activate
                 except BlockingIOError:
                     fcntl.flock(session, fcntl.LOCK_SH | fcntl.LOCK_NB)
                     exclusive = False
