@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Modified in the personal fork on 2026-10-30: describe private macOS engine libraries and their source archives. -->
+<!-- Modified in the personal fork on 2026-10-30: finalize installation guidance for the stable Abate release. -->
 <!-- Created in the personal fork on 2026-10-30: collect installation and recovery instructions specific to the fork's release packages. -->
 # Installing the Abate packages
 
@@ -8,8 +9,8 @@ the original checkout installation are documented [upstream](https://github.com/
 
 The release installer provides the application, Python backend, gem5 and RISC-V
 toolchain without a repository checkout. It never compiles those components.
-**These commands become usable when a release containing the new installer assets
-has been published.** Existing preview releases may not contain them.
+These commands require a stable release containing the standalone installer
+assets supplied with Abate. Older preview releases may not contain them.
 
 On Linux or macOS, download the installer from the latest stable release:
 
