@@ -46,7 +46,7 @@ def generate(artifacts, output, version, revision):
             raise ValueError('Unsupported or failed target')
         package = row['package']
         if (package.get('version') != identity['upstream_version'] or package.get('release') != identity
-                or not reports.stages_ok(package, {'install-final-archive'})):
+                or not reports.stages_ok(package, {'install-final-archive', 'prepare-managed-update', 'managed-update-window'})):
             raise ValueError('Missing installed final-archive evidence or version mismatch')
         assets = package['artifacts']
         runtime = next(item for item in assets if '-sources.' not in item['name'])

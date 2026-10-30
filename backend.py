@@ -53,6 +53,7 @@ STUDIO_VERSION = STUDIO_RELEASE["upstream_version"]
 from updates import Controller, authorized
 RELEASE_UPDATES = Controller(identity=STUDIO_RELEASE)
 UPDATE_RESTARTING = False
+_RUNNING_REQUESTS = 0
 ENVIRONMENT_CONFIG = ROOT / ".ase-studio-env.json"
 ENVIRONMENT_FIELDS = (
     "PROGRAMS_DIRECTORY", "SUBMISSION_DIRECTORY",
@@ -5596,7 +5597,7 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as error:
             return self.send_json({"error": str(error)}, 500)
     def do_POST(self):
-        global UPDATE_RESTARTING
+        global UPDATE_RESTARTING, _RUNNING_REQUESTS
         try:
             data = self.read_json()
             if self.path == '/api/release-update':
@@ -5614,7 +5615,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'ok': True})
                 if action == 'restart':
                     with _ACTIVE_COMMANDS_LOCK:
-                        if _ACTIVE_COMMANDS:
+                        if _ACTIVE_COMMANDS or _RUNNING_REQUESTS:
                             return self.send_json({'error': 'Wait until the simulation or build finishes'}, 409)
                         RELEASE_UPDATES.restart()
                         UPDATE_RESTARTING = True
@@ -5630,17 +5631,25 @@ class Handler(SimpleHTTPRequestHandler):
                             data.get("allowScaffoldEdit", False))
                 return self.send_json({"ok": True})
             if self.path == "/api/run":
-                name = data.get("name")
-                save_source(project_dir(name), data.get("text"),
-                            data.get("allowScaffoldEdit", False))
-                built = build(name)
-                if not built["ok"]:
-                    return self.send_json({"ok": False, "phase": "build", "output": built["output"],
-                                           "advancedOutput": built["advancedOutput"]})
-                simulated = simulate(name)
-                return self.send_json({"ok": simulated["ok"], "phase": "simulate",
-                                       "output": built["output"] + "\n" + simulated["output"],
-                                       "advancedOutput": built["advancedOutput"] + "\n" + simulated["advancedOutput"]})
+                with _ACTIVE_COMMANDS_LOCK:
+                    if UPDATE_RESTARTING:
+                        return self.send_json({'error': 'Studio is restarting'}, 409)
+                    _RUNNING_REQUESTS += 1
+                try:
+                    name = data.get("name")
+                    save_source(project_dir(name), data.get("text"),
+                                data.get("allowScaffoldEdit", False))
+                    built = build(name)
+                    if not built["ok"]:
+                        return self.send_json({"ok": False, "phase": "build", "output": built["output"],
+                                               "advancedOutput": built["advancedOutput"]})
+                    simulated = simulate(name)
+                    return self.send_json({"ok": simulated["ok"], "phase": "simulate",
+                                           "output": built["output"] + "\n" + simulated["output"],
+                                           "advancedOutput": built["advancedOutput"] + "\n" + simulated["advancedOutput"]})
+                finally:
+                    with _ACTIVE_COMMANDS_LOCK:
+                        _RUNNING_REQUESTS -= 1
             if self.path == "/api/projects":
                 name = validate_project_name(data.get("name"))
                 destination = project_path(name)

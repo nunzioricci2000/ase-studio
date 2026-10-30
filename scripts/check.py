@@ -123,7 +123,8 @@ def main():
             if not os.getenv('CHROMIUM_PATH'):
                 report.run('browser-install', ['npx', '--no-install', 'playwright', 'install', 'chromium'])
             report.run('chromium', ['npm', 'run', 'test:browser'], timeout=120)
-            report.run('release-update-ui', ['node', 'tests/update-browser.mjs'], timeout=120)
+            report.run('release-update-ui', ['node', 'tests/update-browser.mjs'], timeout=120,
+                       env=dict(os.environ, PYTHON=sys.executable))
         else:
             webview(report, 'webkitgtk', ['xvfb-run', '-a', sys.executable, 'tests/webkit.py'])
         if sys.platform == 'darwin':

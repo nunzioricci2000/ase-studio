@@ -371,12 +371,12 @@ def main():
             supervisor = [sys.executable, str(studio / 'updates.py'), '--home', str(installed.home), 'launch', '--']
             supervised = (supervisor + native_command[1:] if macos else
                           native_command[:2] + supervisor + native_command[3:])
-            managed_env = dict(os.environ, HOME=str(installed.home))
+            managed_env = dict(os.environ, HOME=str(installed.home), PYTHONDONTWRITEBYTECODE='1')
             report.run('managed-update-window', supervised, timeout=180, env=managed_env)
             if installed.active()[0] == folder or (installed.root / 'activation.json').exists():
                 raise ValueError('Managed native update did not activate and acknowledge readiness')
             if macos:
-                report.run('verify-unchanged-app', ['codesign', '--verify', '--deep', '--strict', str(installed.active()[0] / 'ASE Studio di Nunzio.app')])
+                report.run('verify-unchanged-app', ['codesign', '--verify', '--deep', '--strict', str(app), str(installed.active()[0] / 'ASE Studio di Nunzio.app')])
             artifacts = [output / source_name, output / engine_source, archive]
             report.data['artifacts'] = [dict(name=path.name, bytes=path.stat().st_size, sha256=checksum(path)) for path in artifacts]
             (output / 'SHA256SUMS').write_text(''.join(f'{item["sha256"]}  {item["name"]}\n' for item in report.data['artifacts']))

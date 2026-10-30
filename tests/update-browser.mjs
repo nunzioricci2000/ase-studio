@@ -8,7 +8,7 @@ const server = spawn(process.env.PYTHON || 'python3', ['-u','tests/update-ui-ser
 let browser;
 try {
   const lines = createInterface({input:server.stdout});
-  const url = await Promise.race([new Promise(resolve => lines.once('line',resolve)), new Promise((_,reject)=>setTimeout(()=>reject(Error('Server did not start')),15000).unref())]);
+  const url = await Promise.race([new Promise((resolve,reject) => { lines.once('line',resolve); server.once('error',reject); server.once('exit',code=>reject(Error(`UI fixture exited before readiness: ${code}`))); }), new Promise((_,reject)=>setTimeout(()=>reject(Error('UI fixture did not start within 60 seconds')),60000).unref())]);
   assert.match(url,/^http:\/\/127\.0\.0\.1:\d+$/);
   browser = await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
   const page = await browser.newPage();

@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -111,6 +111,18 @@ class UpdateTests(unittest.TestCase):
         self.assertTrue(updates.authorized(good,8765,token))
         for key, value in [('Origin','https://evil.invalid'),('Host','evil.invalid:8765'),('X-ASE-Update-Token','wrong')]:
             self.assertFalse(updates.authorized({**good,key:value},8765,token))
+
+    def test_restart_refuses_the_gap_between_build_and_simulation(self):
+        import backend
+        handler = Mock(path='/api/release-update')
+        handler.server.server_port = 8765
+        handler.headers = {'Host':'127.0.0.1:8765', 'Origin':'http://127.0.0.1:8765',
+                           'X-ASE-Update-Token':self.controller.token}
+        handler.read_json.return_value = {'action':'restart'}
+        with patch.object(backend, 'RELEASE_UPDATES', self.controller), patch.object(backend, '_RUNNING_REQUESTS', 1), patch.object(self.controller, 'restart') as restart:
+            backend.Handler.do_POST(handler)
+            self.assertEqual(handler.send_json.call_args.args[1],409)
+            restart.assert_not_called()
 
     def test_sessions_block_installation_and_release_after_exit(self):
         with self.install.sessions():

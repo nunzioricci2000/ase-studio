@@ -16,6 +16,8 @@ import tempfile
 import threading
 import time
 
+# The supervisor may execute from a signed bundle; never write imported bytecode there.
+sys.dont_write_bytecode = True
 STUDIO = Path(__file__).resolve().parent
 sys.path.insert(1, str(STUDIO / 'scripts'))
 from release_install import (Installation, APP, OWNER, dependencies, extract_runtime,
