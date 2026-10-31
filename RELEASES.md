@@ -34,7 +34,7 @@ and WSL/Xvfb tests do not certify a real Windows 10 desktop or Start-menu integr
 
 Abate 3 fixes Windows PowerShell host detection using CIM instead of the fragile
 RuntimeInformation lookup. It preserves x86-64-only eligibility, supports native
-WSL invocation from 32-bit PowerShell, handles native error output, literal paths,
+WSL invocation from 32-bit PowerShell, handles native error output, UTF-8/literal paths,
 TLS 1.2 and explicit Linux-user selection throughout preflight. It adds recovery
 instructions for execution policy, old WSL, virtualization, first-run setup and WSLg.
 Tests now run the real host detector and native-process argument/exit handling in

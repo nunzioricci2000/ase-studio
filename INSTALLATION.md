@@ -116,7 +116,7 @@ not yet been performed.
   socket and display environment; the final window and Start entry still require
   observation in a real desktop session.
 - **Windows temporary directory inaccessible from Ubuntu:** check Windows-drive
-  automount in `/etc/wsl.conf`. Spaces and brackets in paths are supported; the
+  automount in `/etc/wsl.conf`. Spaces, brackets and UTF-8 characters in paths are supported; the
   installer reports an unreadable mapped path before starting Bash.
 - **Proxy, TLS, download or checksum failure:** no unchecked Bash installer is
   executed. Correct connectivity/trust configuration and rerun; do not disable

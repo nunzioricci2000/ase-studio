@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+# Modified in the personal fork on 2026-10-31: preserve UTF-8 WSL output and restore the caller console/environment after native commands.
 # Modified in the personal fork on 2026-10-31: use CIM host detection, native WSL paths and testable installation preflight for Windows PowerShell 5.1.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-31: accept Windows 10 build 19044+ with the same required WSL2/WSLg checks as Windows 11.
@@ -48,9 +49,19 @@ function Invoke-WslCommand([string[]]$Arguments, [switch]$Capture) {
     # Preserve diagnostics and decide success from the native exit code instead.
     $ErrorActionPreference = 'Continue'
     $PSNativeCommandUseErrorActionPreference = $false
-    if ($Capture) { $output = @(& $wslExecutable @Arguments 2>&1) }
-    else { & $wslExecutable @Arguments }
-    $code = $LASTEXITCODE
+    $previousEncoding = [Console]::OutputEncoding
+    $previousWslUtf8 = [Environment]::GetEnvironmentVariable('WSL_UTF8', 'Process')
+    try {
+        # Linux paths are UTF-8; Windows PowerShell otherwise decodes with the OEM code page.
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        [Environment]::SetEnvironmentVariable('WSL_UTF8', '1', 'Process')
+        if ($Capture) { $output = @(& $wslExecutable @Arguments 2>&1) }
+        else { & $wslExecutable @Arguments }
+        $code = $LASTEXITCODE
+    } finally {
+        [Console]::OutputEncoding = $previousEncoding
+        [Environment]::SetEnvironmentVariable('WSL_UTF8', $previousWslUtf8, 'Process')
+    }
     if ($code -ne 0) {
         $detail = if ($Capture) { ($output | ForEach-Object { "$_" }) -join "`n" } else { 'See the error above.' }
         throw "WSL command failed ($code). $detail`nReview wsl --status and wsl --list --verbose. If WSL is not enabled, run wsl --install --no-distribution in administrator PowerShell and restart if requested. For virtualization errors, check Virtual Machine Platform and firmware virtualization: https://learn.microsoft.com/windows/wsl/troubleshooting . Rerun the same installer command after resolving the error."

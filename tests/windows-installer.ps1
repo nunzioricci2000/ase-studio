@@ -47,13 +47,15 @@ foreach ($case in @(
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('ase test [paths] ' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
 try {
+    $originalEncoding = [Console]::OutputEncoding
+    $originalWslUtf8 = [Environment]::GetEnvironmentVariable('WSL_UTF8', 'Process')
     $wslExecutable = (Get-Process -Id $PID).Path
     $nativeScript = Join-Path $fixture 'native args.ps1'
     [IO.File]::WriteAllText($nativeScript, '$args | ConvertTo-Json -Compress')
     $spaced = Join-Path $fixture ('user ' + [char]0xE8 + ' file.sh')
     $actual = Invoke-WslCommand -Capture -Arguments @('-NoProfile', '-File', $nativeScript, $spaced, 'install', '--version', 'v1.6.2-abate.3')
     $decoded = @($actual | ConvertFrom-Json)
-    Assert ($decoded.Count -eq 4 -and $decoded[0] -ceq $spaced -and $decoded[3] -eq 'v1.6.2-abate.3') 'Native argument boundaries lost'
+    Assert ($decoded.Count -eq 4 -and $decoded[0] -ceq $spaced -and $decoded[3] -eq 'v1.6.2-abate.3') "Native argument boundaries lost: $actual ; expected path: $spaced"
     $text = Invoke-WslCommand -Capture -Arguments @('-NoProfile', '-Command', '[Console]::WriteLine(42); exit 0')
     Assert ($text -eq '42') 'Native stdout was corrupted'
     Expect-Failure { Invoke-WslCommand -Capture -Arguments @('-NoProfile', '-Command', '[Console]::Error.WriteLine(123); exit 7') } 'WSL command failed (7). 123'
@@ -69,6 +71,8 @@ try {
         Assert ((Get-FileHash -LiteralPath $downloaded).Hash.ToLowerInvariant() -eq '8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643') 'Real HTTPS redirect download differs'
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $tls) 'Download retained modified TLS configuration'
     }
+    Assert ([Console]::OutputEncoding.CodePage -eq $originalEncoding.CodePage) 'Native command retained console encoding changes'
+    Assert ([Environment]::GetEnvironmentVariable('WSL_UTF8', 'Process') -ceq $originalWslUtf8) 'Native command retained WSL_UTF8 changes'
     Expect-Failure { Download 'http://example.invalid/install.sh' (Join-Path $fixture 'unsafe') } 'Only HTTPS'
 } finally { Remove-Item -LiteralPath $fixture -Recurse -Force }
 
