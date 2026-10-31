@@ -65,8 +65,8 @@ try {
         $downloaded = Join-Path $fixture 'LICENSE'
         $tls = [Net.ServicePointManager]::SecurityProtocol
         Download 'https://github.com/nunzioricci2000/ase-studio/releases/download/v1.6.2-abate.2/LICENSE' $downloaded
-        $license = Join-Path (Split-Path $PSScriptRoot -Parent) 'LICENSE'
-        Assert ((Get-FileHash -LiteralPath $downloaded).Hash -eq (Get-FileHash -LiteralPath $license).Hash) 'Real HTTPS redirect download differs'
+        # Pin the published bytes: Git may convert checkout LICENSE to CRLF on Windows.
+        Assert ((Get-FileHash -LiteralPath $downloaded).Hash.ToLowerInvariant() -eq '8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643') 'Real HTTPS redirect download differs'
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $tls) 'Download retained modified TLS configuration'
     }
     Expect-Failure { Download 'http://example.invalid/install.sh' (Join-Path $fixture 'unsafe') } 'Only HTTPS'
