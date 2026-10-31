@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-10-31: document Abate 3 Windows PowerShell compatibility and recovery. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Modified in the personal fork on 2026-10-31: describe Abate 2 compatibility fixes and Windows host-eligibility regression checks. -->
 <!-- Created in the personal fork on 2026-10-27: separate measured Studio checks from engine builds. -->
@@ -17,7 +18,7 @@
 
 This document covers this fork's packaging and verification. For unchanged
 application behavior, use the [original Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
-Current identity: **1.6.2 · Abate**, revision **2**, tag `v1.6.2-abate.2`.
+Current identity: **1.6.2 · Abate**, revision **3**, tag `v1.6.2-abate.3`.
 See [VERSIONING.md](VERSIONING.md) and [installation](INSTALLATION.md).
 Historical preview names and measurements below describe those original runs;
 they do not certify Abate. Consult the reports for the exact Abate release commit.
@@ -29,6 +30,19 @@ Windows 10 build 19044+ x86-64 when WSL2 and WSLg are available. The package wor
 tests the actual Windows eligibility guard in PowerShell 7 and Windows PowerShell
 5.1, including old-build and unsupported-architecture rejection. These fixtures
 and WSL/Xvfb tests do not certify a real Windows 10 desktop or Start-menu integration.
+
+
+Abate 3 fixes Windows PowerShell host detection using CIM instead of the fragile
+RuntimeInformation lookup. It preserves x86-64-only eligibility, supports native
+WSL invocation from 32-bit PowerShell, handles native error output, UTF-8/literal paths,
+TLS 1.2 and explicit Linux-user selection throughout preflight. It adds recovery
+instructions for execution policy, old WSL, virtualization, first-run setup and WSLg.
+Tests now run the real host detector and native-process argument/exit handling in
+PowerShell 7 and Windows PowerShell 5.1 (64-bit and 32-bit). Isolated fixtures also
+exercise the complete orchestration, including denied setup, invalid downloads,
+checksums, update pinning, missing WSLg, mapped paths and cleanup. The Windows CI
+runners are Server 2022/2025, not an interactive Windows 10 Pro 19045 desktop;
+Windows 10 build/architecture cases are fixtures and WSL/Xvfb checks remain separate.
 
 
 Studio and its simulation engine are separate repositories and build products.
@@ -75,7 +89,7 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing the matching named fork tag, currently `v1.6.2-abate.2`, builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.2-abate.3`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
 SHA-256 again. It checks VERSION and FORK.json against the package evidence and

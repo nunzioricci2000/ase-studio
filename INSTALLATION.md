@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-10-31: document Abate 3 Windows PowerShell compatibility and recovery. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Modified in the personal fork on 2026-10-31: identify Abate 2 as the first release with derivative and Windows 10 eligibility fixes. -->
 <!-- Modified in the personal fork on 2026-10-31: align Windows eligibility with Microsoft's Windows 10 build 19044+ WSLg requirement. -->
@@ -25,7 +26,7 @@ bash install-release.sh update
 bash install-release.sh uninstall
 ```
 
-Use `--version v1.6.2-abate.2` to select a specific published stable release (replace the
+Use `--version v1.6.2-abate.3` to select a specific published stable release (replace the
 example with a released version). The installer verifies the target index and
 runtime archive against the checksums from that same release. Missing runtime
 packages are displayed and installed only after confirmation; `--yes` explicitly
@@ -34,19 +35,43 @@ The initial installer itself is downloaded over HTTPS; you can inspect it and
 compare its checksum with the release's `SHA256SUMS` before executing it. These
 checksums detect corruption; they are not an independent publisher signature.
 
-Windows 10 build 19044 or newer, or Windows 11, on x86-64 with WSL2/WSLg,
-in a normal PowerShell session:
+Windows 10 build 19044 or newer (including Windows 10 Pro 19045), or Windows 11,
+on x86-64 with WSL2/WSLg. Use Windows PowerShell 5.1 or PowerShell 7 as your normal
+Windows user, from your home directory, not `C:\Windows\System32`:
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/nunzioricci2000/ase-studio/releases/latest/download/install-release.ps1 -OutFile install-release.ps1
-.\install-release.ps1 install
-.\install-release.ps1 update
-.\install-release.ps1 uninstall
+Set-Location $HOME
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -UseBasicParsing -Uri https://github.com/nunzioricci2000/ase-studio/releases/latest/download/install-release.ps1 -OutFile install-release.ps1
 ```
 
-Use `-Version v1.6.2-abate.2`, `-Yes`, or `-LinuxUser your_linux_username` as needed.
-If your PowerShell policy blocks downloaded scripts, review the script and follow
-your organization's script approval policy. The installer does not change it.
+Inspect the downloaded script before running it. Select **one** operation:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-release.ps1 install
+# To update an existing installation instead:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-release.ps1 update
+# To remove only Studio instead:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-release.ps1 uninstall
+```
+
+`-ExecutionPolicy Bypass` applies only to that child PowerShell process; it does
+not persistently change the machine/user policy. It cannot override organizational
+Group Policy: follow your administrator's approval procedure if execution remains
+blocked. If your existing policy already permits this script, direct execution
+(`.\install-release.ps1 install`) works too. `-UseBasicParsing` avoids the legacy
+Internet Explorer parser and its initialization/security prompts in PowerShell 5.1.
+See Microsoft's [execution-policy documentation](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_execution_policies)
+and [Windows PowerShell download options](https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/invoke-webrequest?view=powershell-5.1).
+
+Append `-Version v1.6.2-abate.3`, `-Yes`, or `-LinuxUser your_linux_username` after
+the action as needed. `-Yes` approves dependency/distro operations; it does not
+skip Windows elevation, restarts, Ubuntu account creation or graphical checks.
+Abate 3 reads the OS build and CPU architecture through CIM, avoiding the
+`RuntimeInformation.OSArchitecture` failure reported under Windows PowerShell.
+It distinguishes ARM64 from x86-64 even though both are 64-bit, and locates native
+WSL through `Sysnative` when invoked from 32-bit PowerShell.
+
 It reuses standard `Ubuntu-24.04` on WSL2 and offers to install it if absent.
 If WSL needs enabling, Windows needs a restart, or Ubuntu first-run user creation
 is incomplete, follow the displayed steps and rerun the same command. It never
@@ -63,6 +88,42 @@ Windows 10 eligibility starts with `v1.6.2-abate.2`; the original
 minimum OS build; they do not certify this application's installation on every
 Windows build. A real Windows 10 desktop installation and Start-menu check have
 not yet been performed.
+
+### Windows recovery
+
+- **Old installer:** download the script again. Updating the app does not replace
+  an `install-release.ps1` file you saved earlier. Abate 2 admitted Windows 10 but
+  still used the fragile architecture lookup; Abate 3 replaces that lookup.
+- **WSL absent, old, or awaiting restart:** follow the displayed administrator
+  command `wsl --install --no-distribution`, restart if requested, then rerun as
+  your normal Windows user. Use `wsl --status` and `wsl --list --verbose` to inspect
+  state. For older inbox WSL or Store/download failures, consult Microsoft's
+  [installation guide](https://learn.microsoft.com/windows/wsl/install);
+  `wsl --update --web-download` is available on recent WSL versions.
+- **Virtualization errors:** WSL2 needs Virtual Machine Platform and enabled CPU
+  virtualization in firmware (or nested virtualization inside a VM). The installer
+  retains the native error and points to Microsoft's
+  [troubleshooting guide](https://learn.microsoft.com/windows/wsl/troubleshooting).
+  It does not change firmware or Windows features silently.
+- **Ubuntu setup/root/WSL1:** launch Ubuntu-24.04 from Start and create a regular
+  Linux account. Use `-LinuxUser USER` if its default user is still root. Existing
+  WSL1 distributions are not converted automatically; review and explicitly run
+  `wsl --set-version Ubuntu-24.04 2` if appropriate.
+- **No GUI or Start entry:** update WSL, save work in all WSL sessions, then use
+  `wsl --shutdown` and retry. Check that `.wslconfig` has not disabled GUI apps,
+  and that Linux profiles do not override `DISPLAY`. Install/update the graphics
+  driver as described in Microsoft's WSLg guide. The installer checks the WSLg
+  socket and display environment; the final window and Start entry still require
+  observation in a real desktop session.
+- **Windows temporary directory inaccessible from Ubuntu:** check Windows-drive
+  automount in `/etc/wsl.conf`. Spaces, brackets and UTF-8 characters in paths are supported; the
+  installer reports an unreadable mapped path before starting Bash.
+- **Proxy, TLS, download or checksum failure:** no unchecked Bash installer is
+  executed. Correct connectivity/trust configuration and rerun; do not disable
+  certificate or checksum verification. Installer downloads enable TLS 1.2 on
+  Windows PowerShell without retaining a changed TLS setting after download.
+
+### Other platforms and installed data
 
 Supported release targets are Ubuntu 22.04 x86-64, Ubuntu 24.04 x86-64/ARM64,
 Debian 12/13 x86-64, Fedora 43 x86-64, Arch Linux x86-64, and macOS 15 Apple
@@ -136,7 +197,7 @@ release, with equivalent access. Keep them and all license notices when
 redistributing. For source-checkout integration, see [DEVELOPING.md](DEVELOPING.md) and the [original installation guide](https://github.com/cad-polito-it/ase-studio#installation).
 
 
-The current release identity is **1.6.2 · Abate**, fork revision **2**. The tag
-`v1.6.2-abate.2` keeps the upstream version, feature package and fork revision
+The current release identity is **1.6.2 · Abate**, fork revision **3**. The tag
+`v1.6.2-abate.3` keeps the upstream version, feature package and fork revision
 separate. See [VERSIONING.md](VERSIONING.md). This naming does not itself mean a
 release is available; install only tags actually published in the fork's Releases.
