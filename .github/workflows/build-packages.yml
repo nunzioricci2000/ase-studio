@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-10-31: gate release packaging on full installer regressions and real host detection in all supported PowerShell hosts.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-31: verify Windows 10/11 installer eligibility in PowerShell 7 and Windows PowerShell 5.1 before WSL checks.
 # Modified in the personal fork on 2026-10-30: authenticate source-paired macOS runtime bottles before packaging.
@@ -168,12 +169,17 @@ jobs:
         with:
           name: studio-ubuntu-24.04-x86_64
           path: artifact
-      - name: Check Windows installer eligibility (PowerShell 7)
+      - name: Check Windows installer and host detection (PowerShell 7)
         shell: pwsh
         run: ./tests/windows-installer.ps1
-      - name: Check Windows installer eligibility (Windows PowerShell 5.1)
+      - name: Check Windows installer and host detection (Windows PowerShell 5.1)
         shell: powershell
         run: ./tests/windows-installer.ps1
+      - name: Check Windows installer (Windows PowerShell 5.1 x86)
+        shell: powershell
+        run: |
+          & "$env:SystemRoot\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File ./tests/windows-installer.ps1
+          if ($LASTEXITCODE -ne 0) { throw '32-bit PowerShell installer tests failed' }
       - name: Test installed Studio in WSL2 with a disposable display
         shell: pwsh
         run: ./scripts/wsl-test.ps1

@@ -1,3 +1,5 @@
+#Requires -Version 5.1
+# Modified in the personal fork on 2026-10-31: use CIM host detection, native WSL paths and testable installation preflight for Windows PowerShell 5.1.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-31: accept Windows 10 build 19044+ with the same required WSL2/WSLg checks as Windows 11.
 # Modified in the personal fork on 2026-10-30: resolve one exact release without accidentally pinning default Windows installs to manual updates.
@@ -8,62 +10,61 @@ param(
     [switch]$Yes,
     [string]$LinuxUser = ''
 )
-# Modified in the personal fork on 2026-10-30: select stable releases by upstream version, feature name and fork revision.
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$repository = 'nunzioricci2000/ase-studio'
-$distro = 'Ubuntu-24.04'
-# WSLg requires Windows 10 build 19044+ or Windows 11:
-# https://learn.microsoft.com/windows/wsl/tutorials/gui-apps
-function Assert-WindowsHost([int]$Build, [Runtime.InteropServices.Architecture]$Architecture) {
-    if ($Build -lt 19044 -or $Architecture -ne [Runtime.InteropServices.Architecture]::X64) {
+
+function Assert-WindowsHost([int]$Build, [int]$Architecture, [int]$AddressWidth) {
+    # Win32_Processor uses 9 for x64 and 12 for ARM64; bitness alone is insufficient.
+    if ($Build -lt 19044 -or $Architecture -ne 9 -or $AddressWidth -ne 64) {
         throw 'This installer requires Windows 10 build 19044 or newer, or Windows 11, on x86-64 with WSL2/WSLg. Windows ARM and native Windows builds are not supported.'
     }
 }
-Assert-WindowsHost -Build ([Environment]::OSVersion.Version.Build) -Architecture ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture)
-if ($Version -ne 'latest' -and $Version -cnotmatch '^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-(?!alpha\.|beta\.|rc\.)[a-z]+\.[1-9][0-9]*\z') { throw 'Use latest or a stable fork tag such as v1.6.0-abate.1.' }
-if ($LinuxUser -and $LinuxUser -notmatch '^[a-z_][a-z0-9_-]*$') { throw 'Invalid Linux username.' }
-function Wsl {
-    & wsl.exe @args
-    if ($LASTEXITCODE -ne 0) { throw "WSL command failed ($LASTEXITCODE). Resolve the displayed error and rerun the same installer command." }
-}
-if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-    throw 'Enable WSL from an administrator PowerShell with: wsl --install --no-distribution . Restart if requested, then rerun this command.'
-}
-$names = (& wsl.exe --list --quiet 2>$null) -replace "`0", ''
-if ($LASTEXITCODE -ne 0) {
-    throw 'WSL is not ready. In administrator PowerShell run: wsl --install --no-distribution . Restart if requested, then rerun this command.'
-}
-if ($distro -notin @($names | ForEach-Object { $_.Trim() })) {
-    if ($Action -ne 'install') { throw 'Ubuntu-24.04 is absent; there is no Studio installation to manage.' }
-    Write-Host 'Required operation: wsl --install --distribution Ubuntu-24.04 --no-launch'
-    if (-not $Yes -and (Read-Host 'Install Ubuntu-24.04? [y/N]') -notmatch '^(y|yes)$') { throw 'Ubuntu installation declined.' }
-    Wsl --install --distribution $distro --no-launch
-    Write-Host 'Open Ubuntu-24.04 from Start to complete first-run setup and create your normal Linux user. Restart Windows if WSL requested it, then rerun this command.'
-    exit 0
-}
-# Read the running kernel instead of parsing localized `wsl --list --verbose` output.
-$kernel = Wsl -d $distro --exec uname -r
-if ($kernel -notmatch 'microsoft.*WSL2|microsoft-standard') {
-    throw 'Ubuntu-24.04 must already use WSL2. No distribution was converted. Review wsl --list --verbose and explicitly migrate it before retrying.'
-}
-$selection = @('-d', $distro)
-if ($LinuxUser) { $selection += @('-u', $LinuxUser) }
-$uid = Wsl @selection --exec id -u
-if ($uid.Trim() -eq '0') {
-    throw 'Complete Ubuntu first-run setup with a normal Linux user, then rerun with -LinuxUser USER. Studio is never launched as root.'
-}
-if ($Action -ne 'uninstall') {
+function Get-WindowsHost {
+    # Avoid RuntimeInformation type/assembly resolution and manifest-dependent OSVersion.
     try {
-        Wsl @selection --exec test -S /mnt/wslg/.X11-unix/X0
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $processors = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
+        if (-not $processors.Count -or [string]$os.BuildNumber -notmatch '^\d+$') { throw 'Missing host information.' }
+        foreach ($cpu in $processors) {
+            Assert-WindowsHost -Build $os.BuildNumber -Architecture $cpu.Architecture -AddressWidth $cpu.AddressWidth
+        }
+        return [pscustomobject]@{ Build = [int]$os.BuildNumber; Architecture = 'x86-64' }
     } catch {
-        throw 'WSLg is unavailable. Review https://learn.microsoft.com/windows/wsl/tutorials/gui-apps and run wsl --update if needed, then rerun from your Windows desktop session.'
+        throw "Cannot validate the Windows host: $($_.Exception.Message) Use Windows PowerShell 5.1 or PowerShell 7 on Windows; verify Get-CimInstance Win32_OperatingSystem and Get-CimInstance Win32_Processor."
     }
 }
+function Get-WslExecutable {
+    # A 32-bit PowerShell process sees SysWOW64 through System32; WSL is native-only.
+    $folder = if ([Environment]::Is64BitProcess) { 'System32' } else { 'Sysnative' }
+    $candidate = Join-Path $env:SystemRoot "$folder\wsl.exe"
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw 'WSL is unavailable. Open native 64-bit PowerShell as administrator and run: wsl --install --no-distribution . Restart if requested, then rerun this installer as your normal Windows user. See https://learn.microsoft.com/windows/wsl/install'
+    }
+    return $candidate
+}
+function Invoke-WslCommand([string[]]$Arguments, [switch]$Capture) {
+    # Windows PowerShell can turn native stderr into terminating errors under Stop.
+    # Preserve diagnostics and decide success from the native exit code instead.
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
+    if ($Capture) { $output = @(& $wslExecutable @Arguments 2>&1) }
+    else { & $wslExecutable @Arguments }
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        $detail = if ($Capture) { ($output | ForEach-Object { "$_" }) -join "`n" } else { 'See the error above.' }
+        throw "WSL command failed ($code). $detail`nReview wsl --status and wsl --list --verbose. If WSL is not enabled, run wsl --install --no-distribution in administrator PowerShell and restart if requested. For virtualization errors, check Virtual Machine Platform and firmware virtualization: https://learn.microsoft.com/windows/wsl/troubleshooting . Rerun the same installer command after resolving the error."
+    }
+    if ($Capture) { return (($output | ForEach-Object { "$_" }) -join "`n").Replace("`0", '').Trim() }
+}
+function Wsl { Invoke-WslCommand -Arguments $args }
+function Wsl-Output { Invoke-WslCommand -Arguments $args -Capture }
 
 # Follow HTTPS redirects explicitly; do not allow a redirect to cleartext HTTP.
-Add-Type -AssemblyName System.Net.Http
 function Download([string]$url, [string]$path) {
+    Add-Type -AssemblyName System.Net.Http
+    $previousTls = [Net.ServicePointManager]::SecurityProtocol
+    [Net.ServicePointManager]::SecurityProtocol = $previousTls -bor [Net.SecurityProtocolType]::Tls12
     $handler = [Net.Http.HttpClientHandler]::new()
     $handler.AllowAutoRedirect = $false
     $client = [Net.Http.HttpClient]::new($handler)
@@ -85,40 +86,85 @@ function Download([string]$url, [string]$path) {
             } finally { $response.Dispose() }
         }
         throw 'Too many download redirects.'
-    } finally { $client.Dispose(); $handler.Dispose() }
+    } finally { $client.Dispose(); $handler.Dispose(); [Net.ServicePointManager]::SecurityProtocol = $previousTls }
 }
-$work = Join-Path ([IO.Path]::GetTempPath()) ('ase-release-' + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory $work | Out-Null
-try {
-    $apiSuffix = if ($Version -eq 'latest') { 'latest' } else { 'tags/' + $Version }
-    Download "https://api.github.com/repos/$repository/releases/$apiSuffix" (Join-Path $work 'release.json')
-    $release = Get-Content -Raw (Join-Path $work 'release.json') | ConvertFrom-Json
-    $tag = $release.tag_name
-    if ($release.draft -or $release.prerelease -or $tag -cnotmatch '^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-(?!alpha\.|beta\.|rc\.)[a-z]+\.[1-9][0-9]*\z' -or
-        ($Version -ne 'latest' -and $tag -ne $Version)) { throw 'A matching published stable release is required.' }
-    $base = "https://github.com/$repository/releases/download/$tag/"
-    foreach ($name in @('install-release.sh', 'SHA256SUMS')) {
-        $asset = @($release.assets | Where-Object { $_.name -ceq $name })
-        if ($asset.Count -ne 1 -or $asset[0].browser_download_url -cne ($base + $name)) { throw "Incomplete release: $name" }
-        $path = Join-Path $work $name
-        Download ($base + $name) $path
-        if ((Get-Item $path).Length -ne $asset[0].size) { throw "Interrupted download: $name" }
+
+function Invoke-StudioInstaller {
+    param([string]$Action, [string]$Version, [switch]$Yes, [string]$LinuxUser)
+    $repository = 'nunzioricci2000/ase-studio'
+    $distro = 'Ubuntu-24.04'
+    $hostInfo = Get-WindowsHost
+    Write-Host "Detected Windows build $($hostInfo.Build), $($hostInfo.Architecture); PowerShell $($PSVersionTable.PSVersion)."
+    if ($Version -ne 'latest' -and $Version -cnotmatch '^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-(?!alpha\.|beta\.|rc\.)[a-z]+\.[1-9][0-9]*\z') { throw 'Use latest or a stable fork tag such as v1.6.2-abate.3.' }
+    if ($LinuxUser -and $LinuxUser -notmatch '^[a-z_][a-z0-9_-]*$') { throw 'Invalid Linux username.' }
+    $wslExecutable = Get-WslExecutable
+    $names = (Wsl-Output --list --quiet) -split "`r?`n"
+    if ($distro -notin @($names | ForEach-Object { $_.Trim() })) {
+        if ($Action -ne 'install') { throw 'Ubuntu-24.04 is absent; there is no Studio installation to manage.' }
+        Write-Host 'Required operation: wsl --install --distribution Ubuntu-24.04 --no-launch'
+        if (-not $Yes -and (Read-Host 'Install Ubuntu-24.04? [y/N]') -notmatch '^(y|yes)$') { throw 'Ubuntu installation declined.' }
+        Wsl --install --distribution $distro --no-launch
+        Write-Host 'Open Ubuntu-24.04 from Start to complete first-run setup and create your normal Linux user. Restart Windows if WSL requested it, then rerun this command. If --install is unsupported or the download stalls, update WSL (wsl --update; wsl --update --web-download if Store access is unavailable) and see https://learn.microsoft.com/windows/wsl/install .'
+        return
     }
-    $sums = @(Get-Content (Join-Path $work 'SHA256SUMS') | Where-Object { $_ -cmatch '^[a-f0-9]{64}  install-release\.sh$' })
-    $bashPath = Join-Path $work 'install-release.sh'
-    if ($sums.Count -ne 1 -or (Get-FileHash -Algorithm SHA256 $bashPath).Hash.ToLower() -cne $sums[0].Substring(0, 64)) {
-        throw 'Installer SHA-256 mismatch.'
+    # Apply the explicit user to every distro command, including the first probe.
+    $selection = @('-d', $distro)
+    if ($LinuxUser) { $selection += @('-u', $LinuxUser) }
+    $kernel = Wsl-Output @selection --exec uname -r
+    if ($kernel -notmatch 'microsoft.*WSL2|microsoft-standard') {
+        throw 'Ubuntu-24.04 must already use WSL2. No distribution was converted. Review wsl --list --verbose and explicitly migrate it with wsl --set-version Ubuntu-24.04 2 before retrying.'
     }
-    $linuxPath = Wsl @selection --exec wslpath -u ($bashPath.Replace('\', '/'))
-    $options = @($Action, '--version', $tag)
-    if ($Version -eq 'latest') { $options += '--resolved-latest' }
-    if ($Yes) { $options += '--yes' }
-    Wsl @selection --exec bash $linuxPath.Trim() @options
+    $uid = Wsl-Output @selection --exec id -u
+    if ($uid -notmatch '^[1-9][0-9]*$') {
+        throw 'Complete Ubuntu first-run setup with a normal Linux user, then rerun with -LinuxUser USER. Studio is never launched as root.'
+    }
     if ($Action -ne 'uninstall') {
-        Write-Host 'Starting ASE Studio in this Windows WSLg session. Close its window to finish verification.'
-        Wsl @selection --exec sh -c 'exec ~/.local/bin/ase-studio'
-        Write-Host 'The WSLg launch command completed. Check that ASE Studio di Nunzio (Ubuntu-24.04) appears in Start. Start-menu visibility requires this interactive check; automated Xvfb tests do not verify it.'
-    } else {
-        Write-Host 'Ubuntu, WSL, shared dependencies and your data were retained.'
+        try {
+            Wsl @selection --exec test -S /mnt/wslg/.X11-unix/X0
+            $display = Wsl-Output @selection --exec printenv DISPLAY
+            if (-not $display) { throw 'DISPLAY is empty.' }
+        } catch {
+            throw 'WSLg is unavailable in this user session. Update WSL from administrator PowerShell with wsl --update (or wsl --update --web-download if Store access is unavailable). Save work in all WSL sessions before wsl --shutdown, then retry from your Windows desktop. Check guiApplications in .wslconfig and DISPLAY overrides in Linux profiles. See https://learn.microsoft.com/windows/wsl/tutorials/gui-apps'
+        }
     }
-} finally { Remove-Item -LiteralPath $work -Recurse -Force }
+
+    $work = Join-Path ([IO.Path]::GetTempPath()) ('ase-release-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory $work | Out-Null
+    try {
+        $apiSuffix = if ($Version -eq 'latest') { 'latest' } else { 'tags/' + $Version }
+        Download "https://api.github.com/repos/$repository/releases/$apiSuffix" (Join-Path $work 'release.json')
+        $release = Get-Content -Raw -LiteralPath (Join-Path $work 'release.json') | ConvertFrom-Json
+        $tag = $release.tag_name
+        if ($release.draft -or $release.prerelease -or $tag -cnotmatch '^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-(?!alpha\.|beta\.|rc\.)[a-z]+\.[1-9][0-9]*\z' -or
+            ($Version -ne 'latest' -and $tag -ne $Version)) { throw 'A matching published stable release is required.' }
+        $base = "https://github.com/$repository/releases/download/$tag/"
+        foreach ($name in @('install-release.sh', 'SHA256SUMS')) {
+            $asset = @($release.assets | Where-Object { $_.name -ceq $name })
+            if ($asset.Count -ne 1 -or $asset[0].browser_download_url -cne ($base + $name)) { throw "Incomplete release: $name" }
+            $path = Join-Path $work $name
+            Download ($base + $name) $path
+            if ((Get-Item -LiteralPath $path).Length -ne $asset[0].size) { throw "Interrupted download: $name" }
+        }
+        $sums = @(Get-Content -LiteralPath (Join-Path $work 'SHA256SUMS') | Where-Object { $_ -cmatch '^[a-f0-9]{64}  install-release\.sh$' })
+        $bashPath = Join-Path $work 'install-release.sh'
+        if ($sums.Count -ne 1 -or (Get-FileHash -Algorithm SHA256 -LiteralPath $bashPath).Hash.ToLower() -cne $sums[0].Substring(0, 64)) {
+            throw 'Installer SHA-256 mismatch.'
+        }
+        $linuxPath = Wsl-Output @selection --exec wslpath -u ($bashPath.Replace('\', '/'))
+        try { Wsl @selection --exec test -r $linuxPath }
+        catch { throw 'The downloaded installer is not readable inside Ubuntu. Check Windows-drive automount in /etc/wsl.conf and access to your Windows temporary directory, then retry.' }
+        $options = @($Action, '--version', $tag)
+        if ($Version -eq 'latest') { $options += '--resolved-latest' }
+        if ($Yes) { $options += '--yes' }
+        Wsl @selection --exec bash $linuxPath.Trim() @options
+        if ($Action -ne 'uninstall') {
+            Write-Host 'Starting ASE Studio in this Windows WSLg session. Close its window to finish verification.'
+            Wsl @selection --exec sh -c 'exec ~/.local/bin/ase-studio'
+            Write-Host 'The WSLg launch command completed. Check that ASE Studio di Nunzio (Ubuntu-24.04) appears in Start. Start-menu visibility requires this interactive check; automated Xvfb tests do not verify it.'
+        } else {
+            Write-Host 'Ubuntu, WSL, shared dependencies and your data were retained.'
+        }
+    } finally { Remove-Item -LiteralPath $work -Recurse -Force }
+}
+
+Invoke-StudioInstaller -Action $Action -Version $Version -Yes:$Yes -LinuxUser $LinuxUser
