@@ -60,7 +60,8 @@ function Invoke-WslCommand([string[]]$Arguments, [switch]$Capture) {
         $code = $LASTEXITCODE
     } finally {
         [Console]::OutputEncoding = $previousEncoding
-        [Environment]::SetEnvironmentVariable('WSL_UTF8', $previousWslUtf8, 'Process')
+        if ($null -eq $previousWslUtf8) { Remove-Item -LiteralPath Env:WSL_UTF8 -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable('WSL_UTF8', $previousWslUtf8, 'Process') }
     }
     if ($code -ne 0) {
         $detail = if ($Capture) { ($output | ForEach-Object { "$_" }) -join "`n" } else { 'See the error above.' }
