@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Modified in the personal fork on 2026-10-31: bootstrap Arch-derived systems using exact ID_LIKE ancestry tokens.
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-30: bootstrap the standalone release installer without a checkout.
 # scripts/release-assets.py appends the original Python implementation and its notices.
@@ -26,8 +27,22 @@ if [[ -z "$python_command" ]] || ! "$python_command" -c 'import sys; sys.exit(sy
         printf -v commands '%q install python' "$brew_command"
     else
         # Parse data without sourcing /etc/os-release as shell code.
-        distro=$(sed -n 's/^ID=//p' /etc/os-release | tr -d '\"')
-        distro_version=$(sed -n 's/^VERSION_ID=//p' /etc/os-release | tr -d '\"')
+        distro=$(sed -n 's/^ID=//p' /etc/os-release | tr -d '\"\047')
+        distro_version=$(sed -n 's/^VERSION_ID=//p' /etc/os-release | tr -d '\"\047')
+        case "$distro" in
+            arch|ubuntu|debian|fedora) ;;
+            *)
+                distro_like=$(sed -n 's/^ID_LIKE=//p' /etc/os-release | tr -d '\"\047')
+                read -r -a distro_parents <<< "$distro_like"
+                for parent in "${distro_parents[@]}"; do
+                    if [[ "$parent" == arch ]]; then
+                        printf 'Arch-derived distribution %s: selecting the Arch bootstrap.\n' "$distro"
+                        distro=arch
+                        break
+                    fi
+                done
+                ;;
+        esac
         case "$distro:$distro_version:$(uname -m)" in
             ubuntu:22.04:x86_64|ubuntu:24.04:x86_64|ubuntu:24.04:aarch64|debian:12:x86_64|debian:13:x86_64)
                 commands='sudo apt-get update && sudo apt-get install -y python3 ca-certificates' ;;

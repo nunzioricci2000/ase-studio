@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-31: accept Windows 10 build 19044+ with the same required WSL2/WSLg checks as Windows 11.
 # Modified in the personal fork on 2026-10-30: resolve one exact release without accidentally pinning default Windows installs to manual updates.
 # Created in the personal fork on 2026-10-30: install release packages on Windows 11 x86-64 through standard Ubuntu WSL2/WSLg.
 param(
@@ -12,10 +13,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repository = 'nunzioricci2000/ase-studio'
 $distro = 'Ubuntu-24.04'
-if ([Environment]::OSVersion.Version.Build -lt 22000 -or
-    [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) {
-    throw 'This installer requires Windows 11 x86-64. Windows ARM and native Windows builds are not supported.'
+# WSLg requires Windows 10 build 19044+ or Windows 11:
+# https://learn.microsoft.com/windows/wsl/tutorials/gui-apps
+function Assert-WindowsHost([int]$Build, [Runtime.InteropServices.Architecture]$Architecture) {
+    if ($Build -lt 19044 -or $Architecture -ne [Runtime.InteropServices.Architecture]::X64) {
+        throw 'This installer requires Windows 10 build 19044 or newer, or Windows 11, on x86-64 with WSL2/WSLg. Windows ARM and native Windows builds are not supported.'
+    }
 }
+Assert-WindowsHost -Build ([Environment]::OSVersion.Version.Build) -Architecture ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture)
 if ($Version -ne 'latest' -and $Version -cnotmatch '^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-(?!alpha\.|beta\.|rc\.)[a-z]+\.[1-9][0-9]*\z') { throw 'Use latest or a stable fork tag such as v1.6.0-abate.1.' }
 if ($LinuxUser -and $LinuxUser -notmatch '^[a-z_][a-z0-9_-]*$') { throw 'Invalid Linux username.' }
 function Wsl {

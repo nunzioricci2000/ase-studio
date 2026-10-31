@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-31: select the Arch runtime for ID_LIKE derivatives while retaining dependency and activation checks.
 # Modified in the personal fork on 2026-10-30: preserve automatic updates when PowerShell resolves latest to a concrete tag.
 # Modified in the personal fork on 2026-10-30: use the bundled exact macOS Protobuf/Abseil ABI instead of unpinned Homebrew libraries.
 # SPDX-License-Identifier: GPL-2.0-only
@@ -83,6 +84,14 @@ def host_target():
                 values[key] = value.strip('"\'')
         distro = values.get('ID')
         target = f'arch-{arch}' if distro == 'arch' else f'{distro}-{values.get("VERSION_ID")}-{arch}'
+        # ID_LIKE is a whitespace-separated ancestry list, not an ABI guarantee.
+        # Keep versioned distributions on their own targets; only Arch ancestry
+        # selects a shared rolling target. dependencies() and startup() still
+        # have to succeed before an install or prepared update becomes active.
+        if distro not in {'arch', 'ubuntu', 'debian', 'fedora'} and 'arch' in values.get('ID_LIKE', '').split():
+            target = f'arch-{arch}'
+            print(f'Arch-derived distribution {distro!r}: selecting {target}; '
+                  'runtime compatibility must pass before activation.', file=sys.stderr)
     else:
         raise ValueError('Use Linux, macOS or the Windows WSL installer')
     if target not in TARGETS:

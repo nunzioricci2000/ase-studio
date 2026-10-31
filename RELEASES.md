@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- Modified in the personal fork on 2026-10-31: describe Abate 2 compatibility fixes and Windows host-eligibility regression checks. -->
 <!-- Created in the personal fork on 2026-10-27: separate measured Studio checks from engine builds. -->
 <!-- Modified in the personal fork on 2026-10-28: retain frontend provenance without adding runtime assets. -->
 <!-- Modified in the personal fork on 2026-10-28: document portable startup and installed-runtime checks. -->
@@ -16,10 +17,18 @@
 
 This document covers this fork's packaging and verification. For unchanged
 application behavior, use the [original Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
-Current identity: **1.6.2 · Abate**, revision **1**, tag `v1.6.2-abate.1`.
+Current identity: **1.6.2 · Abate**, revision **2**, tag `v1.6.2-abate.2`.
 See [VERSIONING.md](VERSIONING.md) and [installation](INSTALLATION.md).
 Historical preview names and measurements below describe those original runs;
 they do not certify Abate. Consult the reports for the exact Abate release commit.
+
+Abate 2 retains upstream 1.6.2 and the existing SDKs. It recognizes Arch ancestry
+via exact `ID_LIKE` tokens for installation and automatic updates, while retaining
+dependency, startup and rollback checks. Its PowerShell installer also accepts
+Windows 10 build 19044+ x86-64 when WSL2 and WSLg are available. The package workflow
+tests the actual Windows eligibility guard in PowerShell 7 and Windows PowerShell
+5.1, including old-build and unsupported-architecture rejection. These fixtures
+and WSL/Xvfb tests do not certify a real Windows 10 desktop or Start-menu integration.
 
 
 Studio and its simulation engine are separate repositories and build products.
@@ -66,7 +75,7 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing the matching named fork tag, currently `v1.6.2-abate.1`, builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.2-abate.2`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
 SHA-256 again. It checks VERSION and FORK.json against the package evidence and
