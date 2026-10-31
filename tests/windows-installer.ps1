@@ -54,7 +54,9 @@ try {
     [IO.File]::WriteAllText($nativeScript, '$args | ConvertTo-Json -Compress')
     $spaced = Join-Path $fixture ('user ' + [char]0xE8 + ' file.sh')
     $actual = Invoke-WslCommand -Capture -Arguments @('-NoProfile', '-File', $nativeScript, $spaced, 'install', '--version', 'v1.6.2-abate.3')
-    $decoded = @($actual | ConvertFrom-Json)
+    # PowerShell 5.1 emits JSON arrays as one pipeline object; direct assignment
+    # avoids an extra array layer that @(... | ConvertFrom-Json) adds there.
+    $decoded = ConvertFrom-Json -InputObject $actual
     Assert ($decoded.Count -eq 4 -and $decoded[0] -ceq $spaced -and $decoded[3] -eq 'v1.6.2-abate.3') "Native argument boundaries lost: $actual ; expected path: $spaced"
     $text = Invoke-WslCommand -Capture -Arguments @('-NoProfile', '-Command', '[Console]::WriteLine(42); exit 0')
     Assert ($text -eq '42') 'Native stdout was corrupted'
