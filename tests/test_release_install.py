@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-31: cover Arch ancestry selection, bootstrap behavior and unsupported-platform rejection.
 # Modified in the personal fork on 2026-10-30: distinguish a user-selected pin from the Windows bootstrap's resolved latest tag.
 # Modified in the personal fork on 2026-10-30: verify independent upstream, codename and revision identities end to end.
 # Created in the personal fork on 2026-10-30: test transactional release installation, security checks and recovery without touching user data.
@@ -18,6 +19,33 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import release_install as installer
+
+
+class HostTargetTests(unittest.TestCase):
+    def test_arch_ancestry_selects_only_supported_architecture_and_exact_tokens(self):
+        cases = [
+            ('ID=arch\n', 'x86_64', 'arch-x86_64'),
+            ('ID=omarchy\nID_LIKE=arch\nVERSION_ID=4.0.4\n', 'x86_64', 'arch-x86_64'),
+            ('ID=derivative\nID_LIKE="other arch"\n', 'x86_64', 'arch-x86_64'),
+            ("ID=derivative\nID_LIKE='arch other'\n", 'x86_64', 'arch-x86_64'),
+            ('ID=derivative\nID_LIKE="other\tarch"\n', 'x86_64', 'arch-x86_64'),
+            ('ID=derivative\nID_LIKE=archlinux\n', 'x86_64', None),
+            ('ID=derivative\n', 'x86_64', None),
+            ('ID=omarchy\nID_LIKE=arch\n', 'aarch64', None),
+            ('ID=pop\nID_LIKE="ubuntu debian"\nVERSION_ID=24.04\n', 'x86_64', None),
+            ('ID=ubuntu\nID_LIKE=arch\nVERSION_ID=24.04\n', 'x86_64', 'ubuntu-24.04-x86_64'),
+            ('ID=ubuntu\nID_LIKE=arch\nVERSION_ID=99\n', 'x86_64', None),
+        ]
+        for release, arch, expected in cases:
+            with self.subTest(release=release, arch=arch), \
+                 patch.object(installer.platform, 'system', return_value='Linux'), \
+                 patch.object(installer.platform, 'machine', return_value=arch), \
+                 patch.object(Path, 'read_text', return_value=release):
+                if expected is None:
+                    with self.assertRaisesRegex(ValueError, 'No verified package'):
+                        installer.host_target()
+                else:
+                    self.assertEqual(installer.host_target(), expected)
 
 
 class InstallerTests(unittest.TestCase):
@@ -270,6 +298,46 @@ class InstallerTests(unittest.TestCase):
                 state = json.loads((self.install.root/'updates.json').read_text())
                 self.assertEqual(state.get('mode', 'automatic'), 'automatic' if resolved else 'manual')
                 self.assertEqual(state.get('pinned'), None if resolved else tag)
+
+    def test_generated_bootstrap_handles_arch_ancestry_without_running_package_manager(self):
+        if sys.platform != 'linux':
+            self.skipTest('Exercise the Linux bootstrap with its system Python')
+        if os.geteuid() == 0:
+            self.skipTest('Standalone bootstrap intentionally rejects root')
+        spec = importlib.util.spec_from_file_location('release_assets_bootstrap', ROOT / 'scripts/release-assets.py')
+        assets = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(assets)
+        script = self.work / 'install-release.sh'
+        script.write_text(assets.render_installer())
+        mocks = self.work / 'mock-bin'
+        mocks.mkdir()
+        os_release, operations = self.work / 'os-release', self.work / 'operations'
+        # A missing Python triggers the real Bash bootstrap; sudo is replaced
+        # with a recorder, so this test cannot modify system packages.
+        for name, body in {
+            'python3': 'exit 1',
+            'uname': 'if [ "$1" = -s ]; then echo Linux; else echo x86_64; fi',
+            'sed': 'exec /usr/bin/sed "$1" "$2" "$FAKE_OS_RELEASE"',
+            'sudo': 'printf "%s\\n" "$*" >> "$FAKE_OPERATIONS"',
+        }.items():
+            path = mocks / name
+            path.write_text('#!/bin/sh\n' + body + '\n')
+            path.chmod(0o755)
+        environment = dict(os.environ, PATH=str(mocks) + os.pathsep + '/usr/bin:/bin',
+                           FAKE_OS_RELEASE=str(os_release), FAKE_OPERATIONS=str(operations))
+        for ancestry, accepted in [('arch', True), ('other arch', True), ('other\tarch', True), ('archlinux', False), ('', False)]:
+            with self.subTest(ancestry=ancestry):
+                operations.unlink(missing_ok=True)
+                os_release.write_text(f'ID=derivative\nID_LIKE="{ancestry}"\nVERSION_ID=4\n')
+                result = subprocess.run(['bash', str(script), '--yes', '--help'], env=environment,
+                                        capture_output=True, text=True)
+                if accepted:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(operations.read_text(), 'pacman -Syu --needed --noconfirm python ca-certificates\n')
+                    self.assertIn('Arch-derived distribution', result.stdout)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(operations.exists())
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-31: exercise real Arch-derivative selection and rollback on runtime incompatibility during updates.
 # Modified in the personal fork on 2026-10-30: cover interruption before removal of the prepared activation pointer.
 # Created in the personal fork on 2026-10-30: test authenticated releases, background policy, concurrent sessions and real supervisor rollback.
 import json
@@ -98,7 +99,36 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(result['phase'], 'failed')
             self.assertIn('confirmation', result['message'])
             download.assert_not_called()
+            self.assertEqual(self.install.current.resolve(), self.old)
+
+    def test_arch_derivative_update_reaches_runtime_check_and_preserves_current_on_failure(self):
+        payload = self.fixture.payload('v1.6.0-abate.2')
+        (payload / 'manifest.json').write_text(json.dumps(dict(target='arch-x86_64', release_tag=self.index['version'])))
+        read_text = Path.read_text
+        def read(path, *args, **kwargs):
+            if path == Path('/etc/os-release'):
+                return 'ID=omarchy\nID_LIKE=arch\nVERSION_ID=4.0.4\n'
+            return read_text(path, *args, **kwargs)
+        def download(tag, target, work, progress=None):
+            self.assertEqual(target, 'arch-x86_64')
+            updates.write_json(work / 'targets.json', self.index)
+            return work / 'archive', tag
+        with patch.object(installer.platform, 'system', return_value='Linux'), \
+             patch.object(installer.platform, 'machine', return_value='x86_64'), \
+             patch.object(Path, 'read_text', read), \
+             patch.object(updates, 'release_metadata', return_value=(self.index, {}, 'https://example.invalid/')) as metadata, \
+             patch.object(updates, 'dependencies') as dependencies, \
+             patch.object(updates, 'release_download', side_effect=download), \
+             patch.object(updates, 'extract_runtime', return_value=payload), \
+             patch.object(installer, 'startup', side_effect=RuntimeError('incompatible SDK library')) as startup:
+            self.controller._check(False)
+            self.assertEqual(metadata.call_args.args[1], 'arch-x86_64')
+            dependencies.assert_called_once_with('arch-x86_64', check_only=True)
+            startup.assert_called_once()
+        self.assertEqual(self.controller.status()['phase'], 'failed')
+        self.assertIn('incompatible SDK library', self.controller.status()['message'])
         self.assertEqual(self.install.current.resolve(), self.old)
+        self.assertFalse((self.install.root / 'prepared').exists())
 
     def test_offline_check_keeps_installation_and_reports_failure(self):
         with patch.object(updates, 'host_target', side_effect=OSError('offline')):

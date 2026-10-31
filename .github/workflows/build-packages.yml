@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-31: verify Windows 10/11 installer eligibility in PowerShell 7 and Windows PowerShell 5.1 before WSL checks.
 # Modified in the personal fork on 2026-10-30: authenticate source-paired macOS runtime bottles before packaging.
 # Created in the personal fork on 2026-10-28: package and test Studio against pinned prebuilt engines.
 # Modified in the personal fork on 2026-10-28: build and exercise native macOS application bundles too.
@@ -167,14 +168,12 @@ jobs:
         with:
           name: studio-ubuntu-24.04-x86_64
           path: artifact
-      - name: Parse the standalone Windows installer
+      - name: Check Windows installer eligibility (PowerShell 7)
         shell: pwsh
-        run: |
-          $tokens = $null
-          $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'scripts/install-release.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
-          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+        run: ./tests/windows-installer.ps1
+      - name: Check Windows installer eligibility (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tests/windows-installer.ps1
       - name: Test installed Studio in WSL2 with a disposable display
         shell: pwsh
         run: ./scripts/wsl-test.ps1
