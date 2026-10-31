@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-10-31: identify the Abate 2 installation-compatibility release. -->
 <!-- Modified in the personal fork on 2026-10-30: document standalone release installers, explicit updates and WSLg verification. -->
 <!-- Modified in the personal fork on 2026-10-27: name the personal app and document automatic source saving. -->
 <!-- Modified in the personal fork on 2026-10-27: clarify licensing and redistribution requirements. -->
@@ -17,7 +18,7 @@ it requires the standalone installer assets supplied with Abate.
 
 # ASE Studio di Nunzio · Abate
 
-**Upstream 1.6.2 · Abate · fork revision 1.** Abate names this fork's first
+**Upstream 1.6.2 · Abate · fork revision 2.** Abate names this fork's first
 feature package: *Monaco → monaco → abate*. The numeric version follows the
 original project; the feature name and fork revision evolve independently.
 See [version naming](VERSIONING.md).
