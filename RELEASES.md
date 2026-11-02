@@ -90,7 +90,7 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing the matching named fork tag, currently `v1.6.2-abate.3`, builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.2-abate.4`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
 SHA-256 again. It checks VERSION and FORK.json against the package evidence and

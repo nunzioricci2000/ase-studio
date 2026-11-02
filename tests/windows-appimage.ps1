@@ -29,6 +29,10 @@ try {
     $linuxOutput=LinuxPath $Output
     $linuxImage=LinuxPath $Image
     Wsl -d Ubuntu-24.04 -u root --exec chmod a+x $linuxImage
+    Wsl -d Ubuntu-24.04 -u studio-check --exec python3 "$linuxRoot/scripts/smoke-package.py" --appimage $linuxImage --output "$linuxOutput/backend"
+    $backend=Get-Content -Raw (Join-Path $Output 'backend/runtime-report.json') | ConvertFrom-Json
+    if($backend.status -ne 'succeeded' -or $backend.checks.Count -ne 8) { throw 'Final AppImage simulation checks failed' }
+    Passed 'windows-appimage-simulations'
     # No Xvfb: native startup and update readiness must use the real WSLg display.
     Wsl -d Ubuntu-24.04 -u studio-check --exec python3 "$linuxRoot/tests/managed-appimage-integration.py" --appimage $linuxImage --report "$linuxOutput/managed.json" --keep-installed
     $managed=Get-Content -Raw (Join-Path $Output 'managed.json') | ConvertFrom-Json

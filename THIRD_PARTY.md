@@ -1,5 +1,10 @@
 # Third-party components and notices
 
+<!-- Modified in the personal fork on 2026-11-02: pin the AppImage build tool to a stable release. -->
+Appimagetool 1.9.1 is a build-only tool (MIT source license), pinned to the SHA256
+published with that upstream release. Its bundled runtime is not used: packaging
+supplies the separately authenticated type2 runtime described below.
+
 <!-- Modified in the personal fork on 2026-11-01: document Windows build-only references and the bundled OpenSSL executable. -->
 The Windows bootstrapper targets the system .NET Framework 4.8 and WPF.
 Microsoft.NETFramework.ReferenceAssemblies.net48 1.0.3 is used only to compile it;
