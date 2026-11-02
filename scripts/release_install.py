@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-02: resolve bundled GTK typelibs during installation on clean hosts.
 # Modified in the personal fork on 2026-11-02: preserve already-executable AppImage permissions on shared Windows mounts.
 # Modified in the personal fork on 2026-11-01: support authenticated managed AppImage installations across compatible distributions.
 # Modified in the personal fork on 2026-10-31: select the Arch runtime for ID_LIKE derivatives while retaining dependency and activation checks.
@@ -393,6 +394,9 @@ def startup(payload, macos):
             env.update(PYTHONHOME=str(payload / 'usr'),
                        PYTHONPATH=str(payload / 'usr/lib/python3/dist-packages'),
                        LD_LIBRARY_PATH=str(payload / 'usr/lib/x86_64-linux-gnu') + ':' + str(payload / 'usr/lib'),
+                       GI_TYPELIB_PATH=str(payload / 'usr/lib/x86_64-linux-gnu/girepository-1.0'),
+                       GIO_MODULE_DIR=str(payload / 'usr/lib/x86_64-linux-gnu/gio/modules'),
+                       GSETTINGS_SCHEMA_DIR=str(payload / 'usr/share/glib-2.0/schemas'),
                        PATH=str(payload / 'usr/bin') + ':' + os.environ.get('PATH', ''))
         else:
             python = Path('/usr/bin/python3')
