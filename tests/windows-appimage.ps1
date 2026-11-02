@@ -3,6 +3,8 @@
 # Created in the personal fork on 2026-11-02: exercise the final AppImage under real WSLg, Start registration and offline removal on a disposable Windows runner.
 param([string]$Image, [string]$Installer, [string]$Output)
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$env:WSL_UTF8='1'
 $root=Split-Path $PSScriptRoot -Parent
 $Image=(Resolve-Path $Image).Path
 $Installer=(Resolve-Path $Installer).Path
@@ -24,7 +26,7 @@ try {
     $kernel=Wsl -d Ubuntu-24.04 -u root --exec uname -r
     if($kernel -notmatch 'microsoft.*WSL2|microsoft-standard') { throw 'A real WSL2 kernel is required' }
     Wsl -d Ubuntu-24.04 -u root --exec test -S /mnt/wslg/.X11-unix/X0
-    Wsl -d Ubuntu-24.04 -u root --exec useradd --create-home studio-check
+    Wsl -d Ubuntu-24.04 -u root --exec /usr/sbin/useradd --create-home studio-check
     $linuxRoot=LinuxPath $root
     $linuxOutput=LinuxPath $Output
     $linuxImage=LinuxPath $Image
