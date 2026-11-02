@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-02: install standard desktop/icon entries so clean-host AppStream validation can resolve the application.
 # Modified in the personal fork on 2026-11-01: avoid host env/systemd ABI conflicts when launching gem5 on newer distributions.
 # Modified in the personal fork on 2026-11-01: include managed-installation identity and the stable supervisor launcher.
 # SPDX-License-Identifier: GPL-2.0-only
@@ -137,6 +138,9 @@ def stage(args):
     (app / 'manifest.json').write_text(json.dumps({'target': 'linux-appimage-x86_64', 'release_tag': identity['release_tag'], 'release': identity}, indent=2) + '\n')
     (app / 'manifest.json.license').write_text('SPDX-License-Identifier: GPL-2.0-only\nCreated in the personal fork on 2026-11-01: managed AppImage identity.\n')
     shutil.copy2(ROOT / 'packaging/appimage' / (APP_ID + '.desktop'), app)
+    applications=app/'usr/share/applications'
+    applications.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(app/(APP_ID+'.desktop'),applications)
     shutil.copy2(ROOT / 'packaging/appimage' / (APP_ID + '.svg'), app)
     import gi
     gi.require_version('GdkPixbuf', '2.0')
@@ -145,6 +149,10 @@ def stage(args):
     icon.savev(str(app / (APP_ID + '.png')), 'png', [], [])
     (app / (APP_ID + '.png.license')).write_text('SPDX-License-Identifier: GPL-2.0-only\nGenerated from the adjacent original SVG.\n')
     (app / '.DirIcon').symlink_to(APP_ID + '.png')
+    icons=app/'usr/share/icons/hicolor/256x256/apps'
+    icons.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(app/(APP_ID+'.png'),icons)
+    shutil.copy2(app/(APP_ID+'.png.license'),icons)
     meta = app / 'usr/share/metainfo'
     meta.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / 'packaging/appimage' / (APP_ID + '.appdata.xml'), meta)
