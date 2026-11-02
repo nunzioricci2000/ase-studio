@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Modified in the personal fork on 2026-11-02: relocate WebKit helper paths and include the private EGL vendor configuration.
+# Modified in the personal fork on 2026-11-02: relocate WebKit/EGL and expose the read-only bundle to the separate D-Bus proxy sandbox.
 # Modified in the personal fork on 2026-11-02: install standard desktop/icon entries so clean-host AppStream validation can resolve the application.
 # Modified in the personal fork on 2026-11-01: avoid host env/systemd ABI conflicts when launching gem5 on newer distributions.
 # Modified in the personal fork on 2026-11-01: include managed-installation identity and the stable supervisor launcher.
@@ -24,13 +24,14 @@ EXCLUDED = ('libc.so*', 'libm.so*', 'libmvec.so*', 'libpthread.so*', 'libdl.so*'
             'ld-linux*', '*.a', '*.o', '*.h', '*.pc', '__pycache__')
 LAUNCHER = '''#!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: resolve the bundle's own location and configure private WebKit, EGL and sandbox paths.
 # Created in the personal fork on 2026-10-31: start the self-contained AppImage runtime.
 set -eu
 # Resolve this launcher, including when invoked by an outer AppImage installer.
 app_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 export ASE_STUDIO_APPDIR="$app_dir"
 export PATH="$app_dir/usr/bin:$PATH"
-export LD_LIBRARY_PATH="$app_dir/usr/lib/x86_64-linux-gnu:$app_dir/usr/lib"
+export LD_LIBRARY_PATH="$app_dir/usr/lib/x86_64-linux-gnu:$app_dir/usr/lib:$app_dir"
 export PYTHONHOME="$app_dir/usr"
 export PYTHONPATH="$app_dir/usr/lib/python3/dist-packages"
 export PYTHONDONTWRITEBYTECODE=1
