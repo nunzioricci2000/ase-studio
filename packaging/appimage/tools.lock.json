@@ -5,8 +5,8 @@
   "artifacts": [
     {
       "name": "appimagetool-x86_64.AppImage",
-      "url": "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
-      "sha256": "ac7fd56feade6002c2f57db39587113275d351fce911a5fbb29ea84cd0666cab"
+      "url": "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage",
+      "sha256": "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
     },
     {
       "name": "runtime-x86_64",
@@ -28,5 +28,6 @@
       "url": "https://raw.githubusercontent.com/AppImage/type2-runtime/fedfad51acc2860b2916a1eef32ba4a500ff31ef/LICENSE",
       "sha256": "aa154fc9070614bbe7921f89db11efd1dba7a1f3a41685958110e2230f9c0ca1"
     }
-  ]
+  ],
+  "appimagetool_version": "1.9.1"
 }

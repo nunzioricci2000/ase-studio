@@ -1,5 +1,6 @@
 # Modified in the personal fork on 2026-10-31: gate release packaging on full installer regressions and real host detection in all supported PowerShell hosts.
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: gate signed AppImage and Windows setup assets on real WSLg and Start-menu checks.
 # Modified in the personal fork on 2026-10-31: verify Windows 10/11 installer eligibility in PowerShell 7 and Windows PowerShell 5.1 before WSL checks.
 # Modified in the personal fork on 2026-10-30: authenticate source-paired macOS runtime bottles before packaging.
 # Created in the personal fork on 2026-10-28: package and test Studio against pinned prebuilt engines.
@@ -28,6 +29,8 @@ concurrency:
   group: studio-packages-${{ github.ref }}-${{ inputs.targets || 'all' }}
   cancel-in-progress: false
 jobs:
+  windows-installer:
+    uses: ./.github/workflows/windows-installer.yml
   sources:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -228,7 +231,7 @@ jobs:
   draft-release:
     environment: release-signing
     if: startsWith(github.ref, 'refs/tags/') && needs.report.outputs.release_ready == 'true'
-    needs: report
+    needs: [report, windows-installer]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -239,7 +242,6 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: studio-*
           path: artifacts
       - name: Recheck every application/source archive and create a draft
         env:
@@ -255,8 +257,10 @@ jobs:
           test -n "$RELEASE_SIGNING_KEY"
           printf '%s\n' "$RELEASE_SIGNING_KEY" > "$ASE_RELEASE_SIGNING_KEY_FILE"
           unset RELEASE_SIGNING_KEY
+          python3 scripts/appimage-release-evidence.py --artifacts artifacts --revision "$GITHUB_SHA" --output artifacts/studio-build-report/appimage-evidence.json
           python3 scripts/release-assets.py --artifacts artifacts --output artifacts/studio-build-report \
-            --version "$TAG" --revision "$GITHUB_SHA"
+            --version "$TAG" --revision "$GITHUB_SHA" --appimage-evidence artifacts/studio-build-report/appimage-evidence.json \
+            --windows-installer artifacts/windows-installer-unsigned/ASEStudioSetup.exe
           mapfile -t files < artifacts/studio-build-report/release-files.txt
           files+=(
             artifacts/studio-build-report/build-report.json artifacts/studio-build-report/build-report.md

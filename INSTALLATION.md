@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-11-02: document the Abate 4 AppImage and unsigned graphical Windows installer release. -->
 <!-- Modified in the personal fork on 2026-10-31: document Abate 3 Windows PowerShell compatibility and recovery. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Modified in the personal fork on 2026-10-31: identify Abate 2 as the first release with derivative and Windows 10 eligibility fixes. -->
@@ -9,13 +10,15 @@
 # Installing the Abate packages
 
 <!-- Modified in the personal fork on 2026-11-01: describe the experimental graphical WSL installer and capability-based distro selection. -->
-The new graphical Windows installer is currently a development build; its managed
-AppImage release target has not been published. It selects the only compatible WSL2
+Abate 4 adds [ASEStudioSetup.exe](https://github.com/nunzioricci2000/ase-studio/releases/latest/download/ASEStudioSetup.exe).
+Download and open it as your normal Windows user. It selects the only compatible WSL2
 distribution automatically, or presents a choice when several are available.
 Compatibility depends on x86-64, glibc 2.35+, a normal Linux user and WSLg, so an
 existing Ubuntu 26.04 can qualify. The application is checked before activation.
 See [Windows installer build and validation](packaging/windows/README.md).
-The published PowerShell flow below remains available for existing releases.
+The executable is unsigned; Windows can show an unknown-publisher or SmartScreen warning.
+Its downloaded runtime is verified against the signed release index. The PowerShell
+flow below remains available and uses the legacy distro-specific packages.
 
 This page covers the fork's standalone distribution. General Studio usage and
 the original checkout installation are documented [upstream](https://github.com/cad-polito-it/ase-studio#readme).
@@ -206,7 +209,7 @@ release, with equivalent access. Keep them and all license notices when
 redistributing. For source-checkout integration, see [DEVELOPING.md](DEVELOPING.md) and the [original installation guide](https://github.com/cad-polito-it/ase-studio#installation).
 
 
-The current release identity is **1.6.2 · Abate**, fork revision **3**. The tag
-`v1.6.2-abate.3` keeps the upstream version, feature package and fork revision
+The current release identity is **1.6.2 · Abate**, fork revision **4**. The tag
+`v1.6.2-abate.4` keeps the upstream version, feature package and fork revision
 separate. See [VERSIONING.md](VERSIONING.md). This naming does not itself mean a
 release is available; install only tags actually published in the fork's Releases.

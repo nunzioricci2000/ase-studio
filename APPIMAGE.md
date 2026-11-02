@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-11-02: document the Abate 4 AppImage and unsigned graphical Windows installer release. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Created in the personal fork on 2026-10-31: document the experimentally verified Linux AppImage. -->
 # Linux AppImage
@@ -22,10 +23,12 @@ compiler/simulator assertions. Reports include startup, workload and total times
 This is an extraction-mode benchmark on one machine, not a certification for every
 FUSE implementation or physical desktop; keep those separate validation targets.
 
-The experimental x86-64 image contains Studio, its frontend, Python, GTK/WebKit,
+The x86-64 AppImage contains Studio, its frontend, Python, GTK/WebKit,
 the pinned gem5 engine and RISC-V compiler. No Python, compiler or npm installation
 is needed to run it. It requires Linux with glibc 2.35 or later and a desktop session.
-Only x86-64 is currently built. This does not change VERSION or FORK.json.
+Only x86-64 is currently built. The release asset is
+`ase-studio-nunzio-linux-appimage-x86_64.AppImage`. A standalone copy uses manual
+file replacement; Windows-installer-owned copies use the signed managed updater.
 
 ```sh
 chmod +x ASE-Studio-experimental-x86_64.AppImage

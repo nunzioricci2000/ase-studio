@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-11-02: document the Abate 4 AppImage and unsigned graphical Windows installer release. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Created in the personal fork on 2026-11-01: document the graphical Windows installer build and its release prerequisites. -->
 # Windows installer
@@ -8,8 +9,8 @@ versions. Framework reference assemblies are build inputs only, not shipped runt
 The executable embeds its PowerShell core, public key and LICENSE; it can be
 downloaded and opened directly. The output directory also exposes those files for
 review and command-line use. Privileged prerequisite operations execute fixed
-commands from the elevated executable, not a writable elevated PowerShell script. Authenticode signing requires a separately
-provisioned publisher certificate; a successful build is not a Windows desktop test.
+commands from the elevated executable, not a writable elevated PowerShell script. The executable is distributed without Authenticode, so Windows may warn about an
+unknown publisher. Release-index signatures remain mandatory.
 
 The PowerShell core checks registered WSL distributions by capabilities. A single
 compatible distribution is selected automatically; multiple choices are presented
@@ -32,6 +33,8 @@ After a prerequisite reboot, the installer reopens; choose Prepare WSL again to
 finish, then Configure Ubuntu to complete the standard first-user setup. Distro
 registration runs as the original Windows user, not alternate UAC credentials.
 
-Windows 10/11 desktop certification, reboot/OOBE recovery, UAC and Start integration
-must be performed on actual Windows before release. Linux PowerShell fixtures and
-cross-compilation do not establish those results.
+The Windows workflow exercises PowerShell 5.1/7 and the installed AppImage on a
+Windows Server 2025 runner with actual WSLg, native readiness, Start-shortcut launch
+and offline uninstall. Signed release generation requires those checks to pass for
+the exact runtime. Windows 10/11 OOBE, interactive UAC/reboots and physical GPU
+coverage remain separate; consult the release evidence for the actual test scope.
