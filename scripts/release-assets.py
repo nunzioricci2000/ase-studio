@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-01: admit a source-paired AppImage only with matching final-artifact and Windows evidence.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: emit Abate identities and embed the shared version parser in standalone installers.
 # Created in the personal fork on 2026-10-30: generate standalone installers and a source-paired index only from verified packages.
@@ -29,7 +30,35 @@ def render_installer():
             + '"$python_command" "$installer_work/release_install.py" "$@"\n')
 
 
-def generate(artifacts, output, version, revision):
+def appimage_assets(evidence, output, version, revision):
+    report = json.loads(evidence.read_text())
+    if report.get('version') != version or report.get('git_sha') != revision:
+        raise ValueError('AppImage evidence identity mismatch')
+    runtime = report['runtime']
+    required = {'install-final-appimage', 'managed-update-window', 'windows-wslg', 'windows-start-menu'}
+    checks = report.get('checks', [])
+    if not required.issubset({c['name'] for c in checks if c.get('status') == 'succeeded' and c.get('sha256') == runtime['sha256']}):
+        raise ValueError('Missing final AppImage/Windows verification evidence')
+    expected = {'ase-studio-nunzio-linux-appimage-x86_64.AppImage',
+                'ase-studio-nunzio-linux-appimage-x86_64-sources.tar.gz',
+                'ase-engine-linux-appimage-x86_64-sources.tar.gz'}
+    records = [runtime, *report['sources']]
+    if len(records) != 3 or {r['name'] for r in records} != expected or runtime['name'] != 'ase-studio-nunzio-linux-appimage-x86_64.AppImage':
+        raise ValueError('Incomplete AppImage/source pair')
+    files, cleaned = [], []
+    for record in records:
+        source = Path(record['path'])
+        if source.stat().st_size != record['bytes'] or digest(source) != record['sha256']:
+            raise ValueError('AppImage evidence artifact mismatch')
+        target = output / record['name']
+        if source.resolve() != target.resolve():
+            shutil.copy2(source, target)
+        files.append((target, record['sha256']))
+        cleaned.append({k: record[k] for k in ('name', 'bytes', 'sha256')})
+    return {'id': 'linux-appimage-x86_64', 'runtime': cleaned[0], 'sources': cleaned[1:]}, files
+
+
+def generate(artifacts, output, version, revision, appimage_evidence=None):
     identity = read_version(ROOT)
     if version != identity['release_tag']:
         raise ValueError('Release tag must match VERSION and FORK.json')
@@ -51,6 +80,12 @@ def generate(artifacts, output, version, revision):
         assets = package['artifacts']
         runtime = next(item for item in assets if '-sources.' not in item['name'])
         rows.append(dict(id=target, runtime=runtime, sources=[item for item in assets if item != runtime]))
+    if appimage_evidence:
+        appimage_row, extra_files = appimage_assets(appimage_evidence, output, version, revision)
+        if any(row['id'] == appimage_row['id'] for row in rows):
+            raise ValueError('Duplicate AppImage target')
+        rows.append(appimage_row)
+        files += extra_files
     index = output / 'targets.json'
     index.write_text(json.dumps(dict(schema_version=3, version=version, git_sha=revision, targets=rows, **identity), indent=2) + '\n')
     signature = output / 'targets.json.sig'
@@ -79,8 +114,9 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--revision', required=True)
+    parser.add_argument('--appimage-evidence', type=Path)
     args = parser.parse_args()
-    generate(args.artifacts, args.output, args.version, args.revision)
+    generate(args.artifacts, args.output, args.version, args.revision, args.appimage_evidence)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: run release-branch Windows checks and discover actual WSLg capabilities before publication.
+# Created in the personal fork on 2026-11-01: compile the Windows bootstrapper and exercise isolated selection tests on Windows.
+name: Windows installer
+on:
+  push:
+    branches: ['release/**']
+  workflow_dispatch:
+  pull_request:
+    paths: ['packaging/windows/**', 'scripts/install-release.ps1', 'tests/windows*.ps1']
+permissions:
+  contents: read
+jobs:
+  installer:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: PowerShell 7 regression and selection tests
+        shell: pwsh
+        run: |
+          ./tests/windows-installer.ps1
+          ./tests/windows-distributions.ps1
+          ./tests/windows-core.ps1
+      - name: Windows PowerShell 5.1 regression and selection tests
+        shell: powershell
+        run: |
+          ./tests/windows-installer.ps1
+          ./tests/windows-distributions.ps1
+          ./tests/windows-core.ps1
+      - name: Compile framework desktop application
+        run: dotnet build packaging/windows/ASEStudioSetup.csproj -c Release -o windows-installer
+      - name: Preserve reviewable installer bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-installer-unsigned
+          path: windows-installer/
+          if-no-files-found: error
+  wsl-capabilities:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Inspect real WSL2 and WSLg availability
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          wsl --set-default-version 2
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot select WSL2' }
+          wsl --install --distribution Ubuntu-24.04 --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot provision the test distro' }
+          $kernel = wsl -d Ubuntu-24.04 -u root --exec uname -r
+          if ($LASTEXITCODE -ne 0 -or $kernel -notmatch 'microsoft.*WSL2|microsoft-standard') { throw 'WSL2 kernel unavailable' }
+          wsl -d Ubuntu-24.04 -u root --exec test -S /mnt/wslg/.X11-unix/X0
+          $socket = $LASTEXITCODE -eq 0
+          $display = wsl -d Ubuntu-24.04 -u root --exec printenv DISPLAY
+          @{ kernel="$kernel"; wslg_socket=$socket; display="$display"; windows_build=[Environment]::OSVersion.Version.ToString(); desktop_test_performed=$false } | ConvertTo-Json | Set-Content -Encoding utf8 wsl-capabilities.json
+          Get-Content wsl-capabilities.json
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-wsl-capabilities
+          path: wsl-capabilities.json
+          if-no-files-found: warn

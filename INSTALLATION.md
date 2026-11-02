@@ -8,6 +8,15 @@
 <!-- Created in the personal fork on 2026-10-30: collect installation and recovery instructions specific to the fork's release packages. -->
 # Installing the Abate packages
 
+<!-- Modified in the personal fork on 2026-11-01: describe the experimental graphical WSL installer and capability-based distro selection. -->
+The new graphical Windows installer is currently a development build; its managed
+AppImage release target has not been published. It selects the only compatible WSL2
+distribution automatically, or presents a choice when several are available.
+Compatibility depends on x86-64, glibc 2.35+, a normal Linux user and WSLg, so an
+existing Ubuntu 26.04 can qualify. The application is checked before activation.
+See [Windows installer build and validation](packaging/windows/README.md).
+The published PowerShell flow below remains available for existing releases.
+
 This page covers the fork's standalone distribution. General Studio usage and
 the original checkout installation are documented [upstream](https://github.com/cad-polito-it/ase-studio#readme).
 

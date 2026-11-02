@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "runtime_commit": "fedfad51acc2860b2916a1eef32ba4a500ff31ef",
+  "runtime_signer": "570C77ACEA40C0F1B758902CBF96CCA56490F695",
+  "artifacts": [
+    {
+      "name": "appimagetool-x86_64.AppImage",
+      "url": "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
+      "sha256": "ac7fd56feade6002c2f57db39587113275d351fce911a5fbb29ea84cd0666cab"
+    },
+    {
+      "name": "runtime-x86_64",
+      "url": "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64",
+      "sha256": "617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46"
+    },
+    {
+      "name": "runtime-x86_64.sig",
+      "url": "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64.sig",
+      "sha256": "4c38bbfd3c8fe7b43cd37483544e5aa682b5932674d89e53fcccd2d3fc3a8f12"
+    },
+    {
+      "name": "signing-pubkey.asc",
+      "url": "https://raw.githubusercontent.com/AppImage/type2-runtime/fedfad51acc2860b2916a1eef32ba4a500ff31ef/signing-pubkey.asc",
+      "sha256": "db8b615eb5bbf5e8418d52906b4a492960926370e2c5041ad6acaccda56ef0c6"
+    },
+    {
+      "name": "runtime-LICENSE",
+      "url": "https://raw.githubusercontent.com/AppImage/type2-runtime/fedfad51acc2860b2916a1eef32ba4a500ff31ef/LICENSE",
+      "sha256": "aa154fc9070614bbe7921f89db11efd1dba7a1f3a41685958110e2230f9c0ca1"
+    }
+  ]
+}

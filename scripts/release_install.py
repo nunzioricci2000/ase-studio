@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-01: support authenticated managed AppImage installations across compatible distributions.
 # Modified in the personal fork on 2026-10-31: select the Arch runtime for ID_LIKE derivatives while retaining dependency and activation checks.
 # Modified in the personal fork on 2026-10-30: preserve automatic updates when PowerShell resolves latest to a concrete tag.
 # Modified in the personal fork on 2026-10-30: use the bundled exact macOS Protobuf/Abseil ABI instead of unpinned Homebrew libraries.
@@ -38,7 +39,8 @@ REPOSITORY = 'nunzioricci2000/ase-studio'
 APP = 'ASE Studio di Nunzio.app'
 DESKTOP = 'org.asestudio.Personal.Release.desktop'
 OWNER = 'ASE Studio release installer v1\n'
-TARGETS = {'ubuntu-22.04-x86_64', 'ubuntu-24.04-x86_64', 'ubuntu-24.04-aarch64',
+APPIMAGE_TARGET = 'linux-appimage-x86_64'
+TARGETS = {APPIMAGE_TARGET, 'ubuntu-22.04-x86_64', 'ubuntu-24.04-x86_64', 'ubuntu-24.04-aarch64',
            'debian-12-x86_64', 'debian-13-x86_64', 'fedora-43-x86_64', 'arch-x86_64',
            'macos-15-arm64', 'macos-15-x86_64'}
 
@@ -101,6 +103,13 @@ def host_target():
 
 def dependencies(target, yes=False, check_only=False):
     """Runtime packages only. CI installs its separate test tools afterwards."""
+    if target == APPIMAGE_TARGET:
+        if platform.machine() != 'x86_64':
+            raise ValueError('AppImage requires x86-64')
+        libc, version = platform.libc_ver()
+        if libc != 'glibc' or tuple(map(int, version.split('.')[:2])) < (2, 35):
+            raise ValueError('AppImage requires glibc 2.35 or newer')
+        return
     privileged = [] if os.geteuid() == 0 else ['sudo']
     if target.startswith('macos-'):
         brew = shutil.which('brew')
@@ -257,7 +266,7 @@ def release_metadata(version, target, work):
     if len(rows) != 1:
         raise ValueError('This release has no verified package for ' + target)
     row = rows[0]
-    expected_runtime = f'ase-studio-nunzio-{target}' + ('.zip' if target.startswith('macos-') else '.tar.gz')
+    expected_runtime = f'ase-studio-nunzio-{target}' + ('.AppImage' if target == APPIMAGE_TARGET else '.zip' if target.startswith('macos-') else '.tar.gz')
     expected_sources = {f'ase-studio-nunzio-{target}-sources.tar.gz', f'ase-engine-{target}-sources.tar.gz'}
     if row['runtime']['name'] != expected_runtime or {r['name'] for r in row['sources']} != expected_sources or len(row['sources']) != 2:
         raise ValueError('Incomplete runtime/source pair')
@@ -328,6 +337,15 @@ def extract_runtime(archive, destination, target):
         raise ValueError('Unsupported archive target')
     if destination.exists():
         raise ValueError('Extraction destination must be new')
+    if target == APPIMAGE_TARGET:
+        # Caller must authenticate this executable through release_download first.
+        destination.mkdir(parents=True)
+        archive.chmod(0o755)
+        run([archive.resolve(), '--appimage-extract'], cwd=destination, stdout=subprocess.DEVNULL, timeout=180)
+        payload = destination / 'squashfs-root'
+        if not (payload / 'AppRun').is_file() or not (payload / 'manifest.json').is_file():
+            raise ValueError('Incomplete managed AppImage')
+        return payload
     if archive.name.endswith('.zip'):
         with zipfile.ZipFile(archive) as stream:
             entries = []
@@ -368,7 +386,14 @@ def startup(payload, macos):
         python = engine / 'python/bin/python3.10'
         env.update(PYTHONHOME=str(engine / 'python'), DYLD_LIBRARY_PATH=str(engine / 'python/lib'))
     else:
-        python = Path('/usr/bin/python3')
+        if (payload / 'AppRun').is_file():
+            python = payload / 'usr/bin/python3.10'
+            env.update(PYTHONHOME=str(payload / 'usr'),
+                       PYTHONPATH=str(payload / 'usr/lib/python3/dist-packages'),
+                       LD_LIBRARY_PATH=str(payload / 'usr/lib/x86_64-linux-gnu') + ':' + str(payload / 'usr/lib'),
+                       PATH=str(payload / 'usr/bin') + ':' + os.environ.get('PATH', ''))
+        else:
+            python = Path('/usr/bin/python3')
         run([python, '-c', 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("WebKit2", "4.1"); from gi.repository import Gtk, WebKit2'], env=env)
     # Executing SDK tools resolves their actual shared libraries on the target.
     run([engine / 'bin/gem5', '--help'], env=env, stdout=subprocess.DEVNULL, timeout=60)
@@ -408,6 +433,18 @@ def startup(payload, macos):
                     process.kill()
                     process.wait()
                 process.stdout.close()
+    if not macos and (payload / 'AppRun').is_file():
+        if not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+            raise ValueError('A graphical session is required to verify the managed AppImage before activation')
+        with tempfile.TemporaryDirectory(prefix='ase-window-check-') as directory:
+            scratch = Path(directory)
+            script = scratch / 'ready.js'
+            script.write_text("JSON.stringify({ready:document.readyState==='complete' && typeof window.aseHasUnsavedChanges==='function'})")
+            report = scratch / 'window.json'
+            run([payload / 'AppRun', '--data', scratch / 'data', '--port', '0',
+                 '--native-smoke-report', report, '--native-smoke-script', script], env=env, timeout=90)
+            if json.loads(report.read_text()).get('status') != 'succeeded':
+                raise ValueError('Native window verification failed; previous installation preserved')
     if macos:
         run(['codesign', '--verify', '--deep', '--strict', payload / APP])
 
@@ -585,6 +622,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['install', 'update', 'uninstall', 'dependencies'], nargs='?', default='install')
     parser.add_argument('--version', default='latest')
+    parser.add_argument('--local-appimage', type=Path, help='Reuse an AppImage after checking its signed release hash')
+    parser.add_argument('--appimage', action='store_true', help='Use the distribution-independent managed AppImage')
     parser.add_argument('--resolved-latest', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--yes', action='store_true', help='Approve the displayed dependency operations without prompting')
     args = parser.parse_args()
@@ -601,16 +640,32 @@ def main():
                 return 0
             if args.action == 'update' and not installation.active():
                 raise ValueError('No managed installation to update; use install first')
-            target = host_target()
+            active = installation.active()
+            target = APPIMAGE_TARGET if args.appimage else (active[1]['target'] if active else host_target())
             with tempfile.TemporaryDirectory(prefix='ase-release-') as directory:
                 work = Path(directory)
                 dependencies(target, args.yes)
-                archive, version = release_download(args.version, target, work)
+                if args.local_appimage:
+                    if target != APPIMAGE_TARGET:
+                        raise ValueError('--local-appimage requires the AppImage target')
+                    index, row, base = release_metadata(args.version, target, work)
+                    archive, version = args.local_appimage.resolve(), index['version']
+                    if archive.stat().st_size != row['runtime']['bytes']:
+                        raise ValueError('AppImage size mismatch')
+                    verify(archive, row['runtime']['sha256'])
+                else:
+                    archive, version = release_download(args.version, target, work)
                 payload = extract_runtime(archive, work / 'unpacked', target)
                 identity = read_version((payload / APP / 'Contents/Resources' if installation.macos else payload) / 'ase_studio')
                 index = json.loads((work / 'targets.json').read_text())
                 if identity['release_sequence'] != index['release_sequence']:
                     raise ValueError('Archive sequence differs from signed index')
+                active = installation.active()
+                preferences_path = installation.root / 'updates.json'
+                previous_preferences = json.loads(preferences_path.read_text()) if preferences_path.exists() else {}
+                highest = max(previous_preferences.get('highest_sequence', 0), active[1].get('release_sequence', 0) if active else 0)
+                if (args.version == 'latest' or args.resolved_latest) and index['release_sequence'] < highest:
+                    raise ValueError('An older release index was rejected')
                 installation.install(payload, target, version)
                 (installation.root / 'prepared').unlink(missing_ok=True)
                 (installation.root / 'activation.json').unlink(missing_ok=True)
@@ -618,6 +673,7 @@ def main():
                 # Explicit selections are pins. Preserve other preferences on ordinary updates.
                 preferences = installation.root / 'updates.json'
                 state = json.loads(preferences.read_text()) if preferences.exists() else {}
+                state['highest_sequence'] = max(highest, index['release_sequence'])
                 if args.version != 'latest' and not args.resolved_latest:
                     state.update(mode='manual', pinned=version)
                 preferences.write_text(json.dumps(state) + '\n')

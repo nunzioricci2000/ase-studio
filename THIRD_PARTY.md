@@ -1,5 +1,30 @@
 # Third-party components and notices
 
+<!-- Modified in the personal fork on 2026-11-01: document Windows build-only references and the bundled OpenSSL executable. -->
+The Windows bootstrapper targets the system .NET Framework 4.8 and WPF.
+Microsoft.NETFramework.ReferenceAssemblies.net48 1.0.3 is used only to compile it;
+its reference assemblies are not redistributed in the installer. The Windows icon
+is a container conversion of this fork's original GPL-2.0-only AppImage artwork.
+The managed AppImage also includes the pinned Ubuntu OpenSSL command for signature
+verification as a separate process. Its distribution notices and matching sources
+are included with the AppImage dependency inventory; it is not relicensed as GPL.
+
+<!-- Modified in the personal fork on 2026-10-31: document the additional AppImage runtime and distribution library closure. -->
+The experimental Linux AppImage additionally carries an Ubuntu 22.04 runtime.
+Exact binary inputs are in `packaging/appimage/ubuntu-runtime.lock.json`; the staged
+image records the packages actually copied in `licenses/distribution-packages.json`.
+Their individual copyrights are retained under `licenses/distribution`, with the
+referenced common texts under `usr/share/common-licenses`. These components retain
+their original licenses, including Python's PSF terms, GTK/GLib LGPL and WebKit's
+component-specific LGPL/BSD terms. The original geometric AppImage icon is GPL-2.0-only.
+
+The embedded AppImage type2 runtime is pinned in `packaging/appimage/tools.lock.json`.
+Its MIT notice and notices for statically linked components (including LGPL-2.1
+libfuse) are preserved in `licenses/appimage-runtime-LICENSE`. Supply the exact
+runtime sources, build scripts, libfuse sources/patch and squashfuse sources beside
+the binary. Appimagetool is a build tool, not an application runtime dependency.
+See [APPIMAGE.md](APPIMAGE.md) for source collection and verification scope.
+
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Created in the personal fork on 2026-10-27: document bundled licenses. -->
 <!-- Modified in the personal fork on 2026-10-28: identify exact frontend revisions and the separate Codicons font license. -->

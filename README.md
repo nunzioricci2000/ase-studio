@@ -17,6 +17,10 @@ Linux/macOS, as your normal user. The command uses the latest stable release;
 it requires the standalone installer assets supplied with Abate.
 [Windows installation, updates, uninstall and recovery](INSTALLATION.md).
 
+<!-- Modified in the personal fork on 2026-10-31: link the experimental self-contained Linux AppImage build. -->
+For the experimental Linux x86-64 AppImage, see [APPIMAGE.md](APPIMAGE.md).
+Its build recipe is available here; no AppImage release asset has been published yet.
+
 # ASE Studio di Nunzio · Abate
 
 **Upstream 1.6.2 · Abate · fork revision 3.** Abate names this fork's first
