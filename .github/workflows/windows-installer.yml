@@ -10,6 +10,9 @@ on:
     paths: ['packaging/windows/**', 'scripts/install-release.ps1', 'tests/windows*.ps1']
 permissions:
   contents: read
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   installer:
     runs-on: windows-2022
@@ -38,28 +41,51 @@ jobs:
           name: windows-installer-unsigned
           path: windows-installer/
           if-no-files-found: error
-  wsl-capabilities:
-    runs-on: windows-2025
-    timeout-minutes: 15
+  appimage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Inspect real WSL2 and WSLg availability
-        shell: pwsh
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/appimage-inputs
+          key: appimage-inputs-${{ hashFiles('packaging/appimage/*.lock.json') }}
+      - name: Build from authenticated pinned inputs
         run: |
-          $ErrorActionPreference = 'Stop'
-          wsl --set-default-version 2
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot select WSL2' }
-          wsl --install --distribution Ubuntu-24.04 --no-launch --web-download
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot provision the test distro' }
-          $kernel = wsl -d Ubuntu-24.04 -u root --exec uname -r
-          if ($LASTEXITCODE -ne 0 -or $kernel -notmatch 'microsoft.*WSL2|microsoft-standard') { throw 'WSL2 kernel unavailable' }
-          wsl -d Ubuntu-24.04 -u root --exec test -S /mnt/wslg/.X11-unix/X0
-          $socket = $LASTEXITCODE -eq 0
-          $display = wsl -d Ubuntu-24.04 -u root --exec printenv DISPLAY
-          @{ kernel="$kernel"; wslg_socket=$socket; display="$display"; windows_build=[Environment]::OSVersion.Version.ToString(); desktop_test_performed=$false } | ConvertTo-Json | Set-Content -Encoding utf8 wsl-capabilities.json
-          Get-Content wsl-capabilities.json
+          python3 scripts/fetch-engine.py --target ubuntu-22.04-x86_64 --output "$RUNNER_TEMP/engine"
+          python3 scripts/build-appimage.py --sdk "$RUNNER_TEMP/engine" --inputs "$RUNNER_TEMP/appimage-inputs" --work "$RUNNER_TEMP/appimage"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: managed-appimage-candidate
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/appimage/*.AppImage
+            ${{ runner.temp }}/appimage/SHA256SUMS
+            ${{ runner.temp }}/appimage/build/report.json
+  wsl-desktop:
+    needs: [installer, appimage]
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: managed-appimage-candidate
+          path: runtime
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-installer-unsigned
+          path: setup
+      - name: Real WSLg activation, Start launch and offline uninstall
+        shell: pwsh
+        run: ./tests/windows-appimage.ps1 -Image runtime/ASE-Studio-experimental-x86_64.AppImage -Installer setup -Output results
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: windows-wsl-capabilities
-          path: wsl-capabilities.json
+          name: windows-appimage-evidence
+          path: results/
           if-no-files-found: warn

@@ -1,5 +1,6 @@
 #Requires -Version 5.1
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: pass only the RSA element to the .NET Framework XML key parser.
 # Created in the personal fork on 2026-11-01: per-user Windows orchestration with authenticated AppImage bootstrap.
 param([ValidateSet('discover','install','update','uninstall','launch','prerequisites','account')][string]$Action = 'discover',
       [string]$Distro = '', [string]$LinuxUser = '', [string]$Version = 'latest', [string]$CancelFile = '')
@@ -148,7 +149,8 @@ try {
     $rsa = [Security.Cryptography.RSACryptoServiceProvider]::new()
     try {
         $rsa.PersistKeyInCsp = $false
-        $rsa.FromXmlString([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'release-public.xml')))
+        $keyDocument = [xml][IO.File]::ReadAllText((Join-Path $PSScriptRoot 'release-public.xml'))
+        $rsa.FromXmlString($keyDocument.DocumentElement.OuterXml)
         if (-not $rsa.VerifyData([IO.File]::ReadAllBytes((Join-Path $work 'targets.json')), 'SHA256', [IO.File]::ReadAllBytes((Join-Path $work 'targets.json.sig')))) { throw 'Release signature verification failed.' }
     } finally { $rsa.Dispose() }
     $index = Get-Content -Raw (Join-Path $work 'targets.json') | ConvertFrom-Json

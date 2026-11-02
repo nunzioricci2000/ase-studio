@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: optionally retain the tested installation for Windows Start-menu checks.
 # Created in the personal fork on 2026-11-01: verify final AppImage activation, native readiness and failure preservation in an isolated real home.
 import argparse
 import json
@@ -16,6 +17,7 @@ import updates
 parser=argparse.ArgumentParser()
 parser.add_argument('--appimage',type=Path,required=True)
 parser.add_argument('--report',type=Path,required=True)
+parser.add_argument('--keep-installed',action='store_true')
 args=parser.parse_args()
 installation=installer.Installation()
 assert not installation.root.exists(), 'Run only in a fresh disposable user account'
@@ -57,9 +59,10 @@ with tempfile.TemporaryDirectory(prefix='managed-appimage-') as temporary:
     assert installation.current.resolve()==replacement
     assert installed.exists() and not (installation.root/'activation.json').exists()
     results.append('prepared AppImage activated by existing supervisor after real native readiness; previous version retained')
-    with installation.lock(),installation.sessions(exclusive=True):installation.uninstall()
-    assert (data/'keep-project.txt').read_text()=='preserved'
-    assert not installation.current.exists()
-    results.append('offline uninstall preserves data')
+    if not args.keep_installed:
+        with installation.lock(),installation.sessions(exclusive=True):installation.uninstall()
+        assert (data/'keep-project.txt').read_text()=='preserved'
+        assert not installation.current.exists()
+        results.append('offline uninstall preserves data')
 args.report.write_text(json.dumps({'status':'succeeded','checks':results},indent=2)+'\n')
 print('PASS real managed AppImage integration')
