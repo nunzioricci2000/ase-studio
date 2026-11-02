@@ -1,6 +1,13 @@
 # Third-party components and notices
 
-<!-- Modified in the personal fork on 2026-11-02: pin the AppImage build tool to a stable release. -->
+<!-- Modified in the personal fork on 2026-11-02: pin the AppImage build tool to a stable release and document WebKit relocation. -->
+
+The AppImage staging recipe relocates four embedded WebKit helper paths to the
+private bundle. `scripts/relocate-appimage.py` supplies the exact transformation;
+`licenses/appimage-webkit-relocation.json` records original and transformed hashes.
+The matching upstream WebKit sources and original copyright/license notices remain
+included. Native startup resolves user paths before changing working directory,
+and WebKit's sandbox receives read-only access to the application bundle.
 Appimagetool 1.9.1 is a build-only tool (MIT source license), pinned to the SHA256
 published with that upstream release. Its bundled runtime is not used: packaging
 supplies the separately authenticated type2 runtime described below.

@@ -264,6 +264,7 @@ jobs:
           mapfile -t files < artifacts/studio-build-report/release-files.txt
           files+=(
             artifacts/studio-build-report/build-report.json artifacts/studio-build-report/build-report.md
-            artifacts/studio-build-report/actions-jobs.json artifacts/studio-build-report/SHA256SUMS)
+            artifacts/studio-build-report/actions-jobs.json artifacts/studio-build-report/SHA256SUMS
+            artifacts/studio-build-report/appimage-evidence.json)
           gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease=false \
             --title "ASE Studio di Nunzio $TAG" --notes-file artifacts/studio-build-report/build-report.md

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-02: relocate WebKit helper paths and include the private EGL vendor configuration.
 # Modified in the personal fork on 2026-11-02: install standard desktop/icon entries so clean-host AppStream validation can resolve the application.
 # Modified in the personal fork on 2026-11-01: avoid host env/systemd ABI conflicts when launching gem5 on newer distributions.
 # Modified in the personal fork on 2026-11-01: include managed-installation identity and the stable supervisor launcher.
@@ -43,6 +44,7 @@ export GST_PLUGIN_SCANNER_1_0="$app_dir/usr/lib/x86_64-linux-gnu/gstreamer1.0/gs
 export GIO_MODULE_DIR="$app_dir/usr/lib/x86_64-linux-gnu/gio/modules"
 export GDK_PIXBUF_MODULEDIR="$app_dir/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders"
 export LIBGL_DRIVERS_PATH="$app_dir/usr/lib/x86_64-linux-gnu/dri"
+export __EGL_VENDOR_LIBRARY_FILENAMES="$app_dir/usr/share/glvnd/egl_vendor.d/50_mesa.json"
 exec "$app_dir/usr/bin/python3.10" "$app_dir/ase_studio/appimage_runtime.py" "$@"
 '''
 
@@ -94,6 +96,7 @@ def stage(args):
 
     for name in ('usr/lib/x86_64-linux-gnu', 'usr/lib/python3.10', 'usr/lib/python3/dist-packages',
                  'usr/share/glib-2.0/schemas', 'usr/share/fonts', 'usr/share/fontconfig',
+                 'usr/share/glvnd',
                  'usr/share/icons/Adwaita', 'usr/share/icons/hicolor', 'usr/share/mime',
                  'usr/share/common-licenses'):
         copy('/' + name, app / name)
@@ -158,6 +161,7 @@ def stage(args):
     shutil.copy2(ROOT / 'packaging/appimage' / (APP_ID + '.appdata.xml'), meta)
     shutil.copy2(args.runtime_license, app / 'licenses/appimage-runtime-LICENSE')
     shutil.copytree(ROOT / 'packaging/appimage/runtime-notices', app / 'licenses/appimage-runtime')
+    subprocess.run([sys.executable, str(ROOT / 'scripts/relocate-appimage.py'), str(app)], check=True)
     subprocess.run([sys.executable, str(ROOT / 'scripts/compact-appimage.py'), str(app)],
                    stdout=subprocess.DEVNULL, check=True)
     for path in app.rglob('*'):

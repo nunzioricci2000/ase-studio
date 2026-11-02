@@ -31,16 +31,17 @@ Only x86-64 is currently built. The release asset is
 file replacement; Windows-installer-owned copies use the signed managed updater.
 
 ```sh
-chmod +x ASE-Studio-experimental-x86_64.AppImage
-./ASE-Studio-experimental-x86_64.AppImage
+chmod +x ase-studio-nunzio-linux-appimage-x86_64.AppImage
+./ase-studio-nunzio-linux-appimage-x86_64.AppImage
 ```
 
 On systems without FUSE, use `--appimage-extract-and-run` before other arguments.
 Use `--data /absolute/path` to choose the project/preferences directory; data lives
 outside the image. The backend remains on loopback. Browser mode uses `--server`.
-Updates currently mean downloading a verified replacement file, saving work and
-closing Studio before switching. The legacy archive updater is disabled in the
-image. The existing Linux/macOS installer remains available separately.
+For standalone copies, update by downloading a verified replacement file, saving
+work and closing Studio before switching. Managed installations use the signed
+updater and check the new application's readiness before switching. The existing
+Linux/macOS installer remains available separately.
 
 ## Build
 
@@ -59,7 +60,8 @@ offline in Docker. The image's own release signature is not provided by that ups
 signature. A continuous upstream download may move: retain the verified input cache;
 a changed checksum fails rather than silently accepting newer bytes. Source exports
 include local changes. This is a pinned-input build, not a claim of bit-for-bit
-reproducibility or a published, production-signed release.
+reproducibility. Published release hashes are authenticated by the signed target
+index; the standalone AppImage has no embedded application signature.
 
 ## Sources and verification
 
@@ -79,3 +81,9 @@ check on Ubuntu 22.04 under Xvfb, with the WebKit sandbox enabled. Full applicat
 browser checks covered saves, drafts, diagnostics and pipeline highlighting.
 FUSE mounting and an interactive hardware desktop, Windows/WSLg, ARM64 and macOS
 were not tested for this artifact. See the delivery report for final hashes and logs.
+
+Abate 4 release generation additionally requires the exact final AppImage to pass
+eight simulations, managed installation/update readiness and Start-shortcut launch
+under actual WSLg on Windows Server 2025. The release's `appimage-evidence.json`
+records those checks and the runtime/source hashes. Windows 10/11 first-run setup,
+interactive UAC/reboots and physical GPU behavior remain outside that test scope.

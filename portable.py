@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-02: resolve user arguments before entering the AppImage directory for relocated WebKit helpers.
 # Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: accept native verification scripts from outside the application.
@@ -102,6 +103,8 @@ def main():
     if args.native_smoke_report:
         command.extend(['--smoke-report', str(args.native_smoke_report.resolve()),
                         '--smoke-script', str(args.native_smoke_script.resolve())])
+    if script == 'native.py' and env.get('ASE_STUDIO_APPDIR'):
+        os.chdir(env['ASE_STUDIO_APPDIR'])
     os.execve(sys.executable, command, env)
 
 
