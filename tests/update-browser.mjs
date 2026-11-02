@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// Modified in the personal fork on 2026-10-31: verify AppImage hides archive actions and sends no activation requests.
 // Created in the personal fork on 2026-10-30: exercise the actual update dialog, policy selection and failure feedback in Chromium.
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -44,6 +45,17 @@ try {
   assert.ok(actions.includes('download'));
   assert.deepEqual(errors,[]);
   console.log('PASS application update UI: managed mode, preferences, prepare, deferred restart and actionable failures');
+  state={managed:false,channel:'appimage',message:'Replace this AppImage after saving and closing Studio.'};
+  actions.length=0;
+  await page.reload();
+  await page.locator('#release-updates').click();
+  await page.getByText(state.message,{exact:true}).waitFor();
+  for (const id of ['mode','check','download','restart']) {
+    assert.equal(await page.locator(`#release-update-${id}`).isVisible(),false);
+  }
+  assert.deepEqual(actions,[]);
+  assert.deepEqual(errors,[]);
+  console.log('PASS AppImage update UI: file replacement instructions, no archive update actions');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-10-31: ensure AppImage cannot start the archive updater.
 # Modified in the personal fork on 2026-10-31: exercise real Arch-derivative selection and rollback on runtime incompatibility during updates.
 # Modified in the personal fork on 2026-10-30: cover interruption before removal of the prepared activation pointer.
 # Created in the personal fork on 2026-10-30: test authenticated releases, background policy, concurrent sessions and real supervisor rollback.
@@ -20,6 +21,15 @@ installer = fixtures.installer
 
 
 class SignatureTests(unittest.TestCase):
+    def test_appimage_has_manual_file_updates_without_network(self):
+        with patch.dict(os.environ, {'ASE_STUDIO_APPDIR': str(ROOT.parent)}):
+            with patch.object(updates, 'release_metadata') as metadata:
+                controller = updates.Controller()
+                self.assertIsNone(controller.installation)
+                self.assertEqual(controller.check(force=True, download=True)['channel'], 'appimage')
+                self.assertIsNone(controller.worker)
+                metadata.assert_not_called()
+
     def test_real_signature_tamper_wrong_key_and_missing_signature(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

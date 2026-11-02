@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-02: enable the AppImage WebKit sandbox with read-only bundle and private GUI-cache access.
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: accept native verification scripts from outside the application.
@@ -72,6 +73,11 @@ def main() -> int:
         dialog.run()
         dialog.destroy()
         return 1
+    if os.environ.get('ASE_STUDIO_APPDIR'):
+        context = WebKit2.WebContext.get_default()
+        context.set_sandbox_enabled(True)
+        context.add_path_to_sandbox(os.environ['ASE_STUDIO_APPDIR'], True)
+        context.add_path_to_sandbox(os.environ['ASE_STUDIO_APPIMAGE_CACHE'], True)
     preferred_port = args.port
 
     flags = Gio.ApplicationFlags.NON_UNIQUE if args.smoke_report else Gio.ApplicationFlags.FLAGS_NONE

@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-11-02: document the Abate 4 AppImage and unsigned graphical Windows installer release. -->
 <!-- Modified in the personal fork on 2026-10-31: document Abate 3 Windows PowerShell compatibility and recovery. -->
 <!-- Modified in the personal fork on 2026-10-31: identify the Abate 2 installation-compatibility release. -->
 <!-- Modified in the personal fork on 2026-10-30: document standalone release installers, explicit updates and WSLg verification. -->
@@ -17,9 +18,14 @@ Linux/macOS, as your normal user. The command uses the latest stable release;
 it requires the standalone installer assets supplied with Abate.
 [Windows installation, updates, uninstall and recovery](INSTALLATION.md).
 
+<!-- Modified in the personal fork on 2026-10-31: link the experimental self-contained Linux AppImage build. -->
+Abate 4 adds a [graphical Windows installer](https://github.com/nunzioricci2000/ase-studio/releases/latest/download/ASEStudioSetup.exe)
+and a [Linux x86-64 AppImage](APPIMAGE.md). These downloads require the published Abate 4 assets.
+The Windows installer is unsigned: Windows may show an unknown-publisher or SmartScreen warning.
+
 # ASE Studio di Nunzio · Abate
 
-**Upstream 1.6.2 · Abate · fork revision 3.** Abate names this fork's first
+**Upstream 1.6.2 · Abate · fork revision 4.** Abate names this fork's first
 feature package: *Monaco → monaco → abate*. The numeric version follows the
 original project; the feature name and fork revision evolve independently.
 See [version naming](VERSIONING.md).

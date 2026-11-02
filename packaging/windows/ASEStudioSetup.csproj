@@ -1,0 +1,17 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- Created in the personal fork on 2026-11-01: build the per-user WPF bootstrapper against Windows framework references. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net48</TargetFramework><OutputType>WinExe</OutputType><PlatformTarget>x64</PlatformTarget><AssemblyName>ASEStudioSetup</AssemblyName><ApplicationIcon>ASEStudio.ico</ApplicationIcon><LangVersion>latest</LangVersion><Deterministic>true</Deterministic><GenerateAssemblyInfo>false</GenerateAssemblyInfo></PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="windows-setup.ps1" LogicalName="payload.windows-setup.ps1"/>
+    <EmbeddedResource Include="../../scripts/install-release.ps1" LogicalName="payload.install-release.ps1"/>
+    <EmbeddedResource Include="release-public.xml" LogicalName="payload.release-public.xml"/>
+    <EmbeddedResource Include="../../LICENSE" LogicalName="payload.LICENSE"/>
+    <Reference Include="PresentationFramework"/><Reference Include="PresentationCore"/><Reference Include="WindowsBase"/><Reference Include="System.Xaml"/><Reference Include="System.Web.Extensions"/>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="All"/>
+    <None Include="windows-setup.ps1" CopyToOutputDirectory="PreserveNewest"/>
+    <None Include="release-public.xml" CopyToOutputDirectory="PreserveNewest"/>
+    <None Include="../../scripts/install-release.ps1" Link="install-release.ps1" CopyToOutputDirectory="PreserveNewest"/>
+    <None Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest"/>
+  </ItemGroup>
+</Project>

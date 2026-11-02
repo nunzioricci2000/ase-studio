@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-31: avoid Git update operations inside AppImage deployments.
 # Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-FileCopyrightText: 2026 Behnam Farnaghinejad <behnam.farnaghinejad@polito.it>
 # SPDX-License-Identifier: GPL-2.0-only
@@ -5423,6 +5424,9 @@ def rebuild_configured_gem5(repository):
 
 
 def update_status(refresh=False):
+    if RELEASE_UPDATES.status().get('channel') == 'appimage':
+        return {'available': False, 'canUpdate': False, 'repositories': [],
+                'message': RELEASE_UPDATES.status()['message']}
     repositories = [
         repository_update_status(
             ROOT,

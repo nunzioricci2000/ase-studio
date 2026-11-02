@@ -1,0 +1,37 @@
+{
+  "note": "License text provenance. Library tags identify these notice texts, not a claim of exact linked versions in the upstream prebuilt runtime. libfuse and squashfuse versions are pinned in its build recipe.",
+  "files": [
+    {
+      "file": "musl-COPYRIGHT",
+      "url": "https://raw.githubusercontent.com/ifduyue/musl/v1.2.5/COPYRIGHT",
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+    },
+    {
+      "file": "zstd-LICENSE",
+      "url": "https://raw.githubusercontent.com/facebook/zstd/v1.5.6/LICENSE",
+      "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+    },
+    {
+      "file": "zlib-LICENSE",
+      "url": "https://raw.githubusercontent.com/madler/zlib/v1.3.1/LICENSE",
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"
+    },
+    {
+      "file": "mimalloc-LICENSE",
+      "url": "https://raw.githubusercontent.com/microsoft/mimalloc/v2.1.9/LICENSE",
+      "sha256": "82ade5d7d9b029044b5fbbc326207fc47c2d44ee4dd71e8a559c36d728217de9"
+    },
+    {
+      "file": "libfuse-LGPL2.txt",
+      "archive": "fuse-3.15.0.tar.xz",
+      "member": "fuse-3.15.0/LGPL2.txt",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    {
+      "file": "squashfuse-LICENSE",
+      "archive": "squashfuse-0.5.2.tar.gz",
+      "member": "squashfuse-0.5.2/LICENSE",
+      "sha256": "9e909cc8a8ba27b1a649c964cf9eda37de911f3138c2b64e6d2f01703904ac13"
+    }
+  ]
+}

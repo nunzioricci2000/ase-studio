@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-01: preserve managed AppImage supervision and its authenticated update target.
+# Modified in the personal fork on 2026-10-31: keep AppImage updates separate from legacy archive activation.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: discard an interrupted activation's queue before restoring the previous version.
 # Created in the personal fork on 2026-10-30: signed background updates, coordinated activation, native readiness and rollback.
@@ -42,6 +44,11 @@ def write_json(path, value):
 
 def read_json(path, default=None):
     return json.loads(path.read_text()) if path.exists() else (default or {})
+
+
+def appimage_installation():
+    root = os.environ.get('ASE_STUDIO_APPDIR')
+    return bool(root and Path(root).resolve() == STUDIO.parent.resolve())
 
 
 def managed_installation(studio=STUDIO):
@@ -92,6 +99,9 @@ class Controller:
         return {'mode': 'automatic', **read_json(self.installation.root / 'updates.json')}
 
     def status(self):
+        if appimage_installation() and not self.installation:
+            return {'managed': False, 'channel': 'appimage',
+                    'message': 'This AppImage is updated by replacing its file. Download a verified new AppImage, finish simulations, save your work and close all Studio windows before switching. Your projects and preferences remain in your data directory. Automatic archive updates are disabled for this format.'}
         if not self.installation:
             return {'managed': False, 'message': 'Release updates require the standalone installer.'}
         prefs = self.preferences()
@@ -138,7 +148,9 @@ class Controller:
                 write_json(status_path, {'phase': 'checking'})
                 with tempfile.TemporaryDirectory(prefix='download-', dir=installation.root) as directory:
                     work = Path(directory)
-                    target = host_target()
+                    target = installation.active()[1]['target']
+                    if target != 'linux-appimage-x86_64':
+                        target = host_target()
                     index, row, base = release_metadata('latest', target, work)
                     sequence = index['release_sequence']
                     installed = installation.active()[1]

@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-11-02: prepare the Abate 4 Windows and AppImage release. -->
 <!-- Modified in the personal fork on 2026-10-31: document Abate 3 Windows PowerShell compatibility and recovery. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Modified in the personal fork on 2026-10-31: describe Abate 2 compatibility fixes and Windows host-eligibility regression checks. -->
@@ -18,7 +19,7 @@
 
 This document covers this fork's packaging and verification. For unchanged
 application behavior, use the [original Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
-Current identity: **1.6.2 · Abate**, revision **3**, tag `v1.6.2-abate.3`.
+Current identity: **1.6.2 · Abate**, revision **4**, tag `v1.6.2-abate.4`.
 See [VERSIONING.md](VERSIONING.md) and [installation](INSTALLATION.md).
 Historical preview names and measurements below describe those original runs;
 they do not certify Abate. Consult the reports for the exact Abate release commit.
@@ -89,7 +90,7 @@ rebuild measurements. Missing reports, failed jobs, mismatched revisions, incomp
 runtime checks or failed source rebuilds prevent the aggregate from approving a
 release. Parallel job durations must not be added to estimate elapsed workflow time.
 
-Pushing the matching named fork tag, currently `v1.6.2-abate.3`, builds the same matrix, requires the tag to
+Pushing the matching named fork tag, currently `v1.6.2-abate.4`, builds the same matrix, requires the tag to
 identify the current `main` tip and creates a draft release only after all selected
 targets pass. The draft job verifies every application/source archive's size and
 SHA-256 again. It checks VERSION and FORK.json against the package evidence and

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-31: include the AppImage runtime entry point in corresponding runtime packages.
 # Modified in the personal fork on 2026-10-30: bundle source-paired private macOS engine libraries before signing.
 # Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-License-Identifier: GPL-2.0-only
@@ -145,7 +146,7 @@ def export_code(destination, metadata, release=False, root=ROOT):
 RUNTIME_FILES = {
     'updates.py', 'release_security.py', 'release-public.pem', 'release-public.pem.license',
     'scripts/release_install.py',
-    'portable.py', 'backend.py', 'native.py', 'VERSION', 'VERSION.license',
+    'appimage_runtime.py', 'portable.py', 'backend.py', 'native.py', 'VERSION', 'VERSION.license',
     'FORK.json', 'FORK.json.license', 'versioning.py', 'LICENSE', 'THIRD_PARTY.md',
     'scripts/portable-demo.mk', 'frontend/index.html', 'frontend/studio.css',
     'frontend/studio.js', 'frontend/riscv-opcodes.js', 'frontend/memory-window.js',

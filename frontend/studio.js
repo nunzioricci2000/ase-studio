@@ -1,3 +1,4 @@
+// Modified in the personal fork on 2026-10-31: explain AppImage replacement updates without inactive archive controls.
 import {RISCV_OPCODE_CATALOG} from './riscv-opcodes.js';
 import {createSourceEditor} from './vendor/editor.js';
 /*
@@ -3574,6 +3575,14 @@ async function releaseUpdateAction(action, values = {}) {
     body: JSON.stringify({action, ...values})});
 }
 function renderReleaseUpdate(state) {
+  const appimage = state.channel === 'appimage';
+  $('#release-update-mode').closest('label').hidden = appimage;
+  $('#release-update-check').hidden = appimage;
+  if (appimage) {
+    $('#release-update-status').textContent = state.message;
+    for (const id of ['download', 'restart', 'progress', 'notes']) $('#release-update-' + id).hidden = true;
+    return;
+  }
   $('#release-update-mode').value = state.mode;
   $('#release-update-mode').disabled = state.busy;
   const labels = {checking: 'Checking for updates…', downloading: 'Downloading update…',
@@ -3594,17 +3603,18 @@ function renderReleaseUpdate(state) {
 }
 async function refreshReleaseUpdates() {
   const state = await api('/api/release-update');
-  if (state.managed) { releaseUpdateToken = state.token; renderReleaseUpdate(state); }
+  if (state.managed || state.channel === 'appimage') { releaseUpdateToken = state.token; renderReleaseUpdate(state); }
   return state;
 }
 async function initializeReleaseUpdates() {
   try {
     const state = await refreshReleaseUpdates();
-    if (!state.managed) return false;
+    if (!state.managed && state.channel !== 'appimage') return false;
     $('#release-updates').hidden = false;
     $('#update').hidden = true;
     $('#release-updates').onclick = () => $('#release-update-dialog').showModal();
     $('#release-update-close').onclick = () => $('#release-update-dialog').close();
+    if (state.channel === 'appimage') return true;
     const perform = async (action, values) => {
       try { renderReleaseUpdate(await releaseUpdateAction(action, values)); }
       catch (error) { $('#release-update-status').textContent = error.message; }

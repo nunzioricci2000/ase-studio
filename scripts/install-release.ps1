@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-11-01: discover compatible WSL distributions and allow explicit selection.
 #Requires -Version 5.1
 # Modified in the personal fork on 2026-10-31: preserve UTF-8 WSL output and restore the caller console/environment after native commands.
 # Modified in the personal fork on 2026-10-31: use CIM host detection, native WSL paths and testable installation preflight for Windows PowerShell 5.1.
@@ -9,7 +10,9 @@ param(
     [ValidateSet('install', 'update', 'uninstall')][string]$Action = 'install',
     [string]$Version = 'latest',
     [switch]$Yes,
-    [string]$LinuxUser = ''
+    [string]$LinuxUser = '',
+    [string]$Distro = '',
+    [string]$CancelFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,7 +88,7 @@ function Download([string]$url, [string]$path) {
     try {
         for ($i = 0; $i -lt 10; $i++) {
             if (([Uri]$url).Scheme -ne 'https') { throw 'Only HTTPS release downloads are permitted.' }
-            $response = $client.GetAsync($url).GetAwaiter().GetResult()
+            $response = $client.GetAsync($url, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
             try {
                 $status = [int]$response.StatusCode
                 if ($status -in @(301, 302, 303, 307, 308)) {
@@ -93,7 +96,17 @@ function Download([string]$url, [string]$path) {
                     continue
                 }
                 $response.EnsureSuccessStatusCode() | Out-Null
-                [IO.File]::WriteAllBytes($path, $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult())
+                $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+                $outputStream = [IO.File]::Create($path)
+                try {
+                    $buffer = New-Object byte[] 81920
+                    $received = 0L; $reported = 0L
+                    while (($count = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                        if ((Get-Variable CancelFile -ErrorAction SilentlyContinue) -and $CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw [OperationCanceledException]::new('Download cancelled before installation.') }
+                        $outputStream.Write($buffer, 0, $count); $received += $count
+                        if ($received - $reported -ge 8388608) { Write-Host ("Download {0}: {1:N0} MiB" -f ([IO.Path]::GetFileName($path)), ($received / 1MB)); $reported = $received }
+                    }
+                } finally { $outputStream.Dispose(); $inputStream.Dispose() }
                 return
             } finally { $response.Dispose() }
         }
@@ -101,10 +114,57 @@ function Download([string]$url, [string]$path) {
     } finally { $client.Dispose(); $handler.Dispose(); [Net.ServicePointManager]::SecurityProtocol = $previousTls }
 }
 
+function Get-StudioDistributions([string]$LinuxUser = '') {
+    $names = (Wsl-Output --list --quiet) -split "`r?`n"
+    $defaultName = ''
+    try { if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss') {
+        $registry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
+        if ($registry.PSObject.Properties.Name -contains 'DefaultDistribution') { $defaultName = (Get-ItemProperty (Join-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss' $registry.DefaultDistribution)).DistributionName }
+    }
+    } catch { $defaultName = '' }
+    foreach ($entry in $names) {
+        if ((Get-Variable CancelFile -ErrorAction SilentlyContinue) -and $CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw [OperationCanceledException]::new('Discovery cancelled.') }
+        $name = $entry.Trim()
+        if (-not $name) { continue }
+        $reason = ''
+        try {
+            if ($name -match '^(docker-desktop(?:-data)?|podman-machine.*)$') { throw 'Distribution managed by a container application.' }
+            $selection = @('-d', $name)
+            if ($LinuxUser) { $selection += @('-u', $LinuxUser) }
+            if ((Wsl-Output @selection --exec uname -r) -notmatch 'microsoft.*WSL2|microsoft-standard') { throw 'WSL2 is required.' }
+            if ((Wsl-Output @selection --exec uname -m) -ne 'x86_64') { throw 'x86-64 is required.' }
+            if ((Wsl-Output @selection --exec id -u) -notmatch '^[1-9][0-9]*$') { throw 'Configure a normal Linux user.' }
+            $libc = Wsl-Output @selection --exec getconf GNU_LIBC_VERSION
+            if ($libc -notmatch '^glibc (\d+)\.(\d+)(?:\.\d+)*$') { throw 'glibc is required.' }
+            if ([int]$Matches[1] -lt 2 -or ([int]$Matches[1] -eq 2 -and [int]$Matches[2] -lt 35)) { throw 'glibc 2.35 or newer is required.' }
+            Wsl @selection --exec test -S /mnt/wslg/.X11-unix/X0
+            if (-not (Wsl-Output @selection --exec printenv DISPLAY)) { throw 'WSLg display is unavailable.' }
+        } catch { $reason = $_.Exception.Message }
+        [pscustomobject]@{ Name = $name; Compatible = (-not $reason); Reason = $reason; IsDefault = ($name -ceq $defaultName) }
+    }
+}
+function Select-StudioDistribution($Candidates, [string]$Requested, [switch]$NonInteractive) {
+    if ($Requested) {
+        $match = @($Candidates | Where-Object { $_.Name -ceq $Requested })
+        if ($match.Count -ne 1) { throw "Distribution not registered: $Requested" }
+        if (-not $match[0].Compatible) { throw "$Requested : $($match[0].Reason)" }
+        return $Requested
+    }
+    $eligible = @($Candidates | Where-Object { $_.Compatible })
+    if ($eligible.Count -eq 1) { return $eligible[0].Name }
+    if ($eligible.Count -eq 0) { return '' }
+    if ($NonInteractive) { throw 'Multiple compatible distributions: specify -Distro.' }
+    for ($i = 0; $i -lt $eligible.Count; $i++) { Write-Host "$($i + 1). $($eligible[$i].Name)" }
+    $choice = Read-Host 'Choose a distribution number'
+    $number = 0
+    if (-not [int]::TryParse($choice, [ref]$number) -or $number -lt 1 -or $number -gt $eligible.Count) { throw 'Invalid distribution selection.' }
+    return $eligible[$number - 1].Name
+}
+
 function Invoke-StudioInstaller {
-    param([string]$Action, [string]$Version, [switch]$Yes, [string]$LinuxUser)
+    param([string]$Action, [string]$Version, [switch]$Yes, [string]$LinuxUser, [string]$Distro)
     $repository = 'nunzioricci2000/ase-studio'
-    $distro = 'Ubuntu-24.04'
+    $distro = if ($Distro) { $Distro } else { 'Ubuntu-24.04' }
     $hostInfo = Get-WindowsHost
     Write-Host "Detected Windows build $($hostInfo.Build), $($hostInfo.Architecture); PowerShell $($PSVersionTable.PSVersion)."
     if ($Version -ne 'latest' -and $Version -cnotmatch '^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-(?!alpha\.|beta\.|rc\.)[a-z]+\.[1-9][0-9]*\z') { throw 'Use latest or a stable fork tag such as v1.6.2-abate.3.' }
@@ -179,4 +239,11 @@ function Invoke-StudioInstaller {
     } finally { Remove-Item -LiteralPath $work -Recurse -Force }
 }
 
-Invoke-StudioInstaller -Action $Action -Version $Version -Yes:$Yes -LinuxUser $LinuxUser
+if ($MyInvocation.InvocationName -ne '.') {
+    $companion = Join-Path $PSScriptRoot 'windows-setup.ps1'
+    if (Test-Path -LiteralPath $companion) {
+        & $companion -Action $Action -Version $Version -LinuxUser $LinuxUser -Distro $Distro
+    } else {
+        Invoke-StudioInstaller -Action $Action -Version $Version -Yes:$Yes -LinuxUser $LinuxUser -Distro $Distro
+    }
+}
