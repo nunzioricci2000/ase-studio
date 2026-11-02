@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[Desktop Entry]
+Type=Application
+Name=ASE Studio di Nunzio
+Comment=Edit and simulate RISC-V assembly
+Exec=AppRun
+Icon=io.github.nunzioricci2000.ASEStudio
+Categories=Development;
+Terminal=false

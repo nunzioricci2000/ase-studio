@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-11-02: assert Abate 4 release identity and sequence.
 # Modified in the personal fork on 2026-10-31: assert Abate 3 release identity and sequence.
 # Modified in the personal fork on 2026-10-30: cover signed Abate update metadata and runtime dependencies.
 # SPDX-License-Identifier: GPL-2.0-only
@@ -19,10 +20,10 @@ class VersioningTests(unittest.TestCase):
         identity = read_version(ROOT)
         self.assertEqual(identity['upstream_version'], '1.6.2')
         self.assertEqual(identity['display_version'], '1.6.2 · Abate')
-        self.assertEqual(identity['release_tag'], 'v1.6.2-abate.3')
-        self.assertEqual(identity['release_sequence'], 3)
+        self.assertEqual(identity['release_tag'], 'v1.6.2-abate.4')
+        self.assertEqual(identity['release_sequence'], 4)
         self.assertEqual(parse_release_tag(identity['release_tag']), {
-            'upstream_version': '1.6.2', 'codename': 'abate', 'fork_revision': 3})
+            'upstream_version': '1.6.2', 'codename': 'abate', 'fork_revision': 4})
 
     def test_fork_fixes_upstream_updates_and_feature_packages_are_independent(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,10 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- Created in the personal fork on 2026-10-31: original geometric processor icon; no university artwork or trademarks. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="#183047"/>
+  <g stroke="#71ded4" stroke-width="6" stroke-linecap="round">
+    <path d="M42 22v12m22-12v12m22-12v12M42 94v12m22-12v12m22-12v12M22 42h12m-12 22h12m-12 22h12m60-44h12m-12 22h12m-12 22h12"/>
+    <rect x="34" y="34" width="60" height="60" rx="8" fill="none"/>
+    <path d="m49 51 12 13-12 13m21 0h10" fill="none"/>
+  </g>
+</svg>

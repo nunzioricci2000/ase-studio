@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<component type="desktop-application">
+  <id>io.github.nunzioricci2000.ASEStudio</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-only</project_license>
+  <name>ASE Studio di Nunzio</name>
+  <summary>Edit and simulate RISC-V assembly</summary>
+  <description><p>A personal fork of ASE Studio with a Monaco editor and a bundled gem5 simulator and RISC-V toolchain.</p></description>
+  <launchable type="desktop-id">io.github.nunzioricci2000.ASEStudio.desktop</launchable>
+  <url type="homepage">https://github.com/nunzioricci2000/ase-studio</url>
+  <url type="bugtracker">https://github.com/nunzioricci2000/ase-studio/issues</url>
+  <provides><binary>AppRun</binary></provides>
+</component>

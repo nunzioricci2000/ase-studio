@@ -1,0 +1,23 @@
+[
+  {
+    "name": "type2-runtime-fedfad51acc2860b2916a1eef32ba4a500ff31ef.tar.gz",
+    "url": "https://codeload.github.com/AppImage/type2-runtime/tar.gz/fedfad51acc2860b2916a1eef32ba4a500ff31ef",
+    "bytes": 31128,
+    "algorithm": "sha256",
+    "digest": "e27ea3c837e9c660e1a9a2993b673ae93bbb53077330efba8654031e302d4e8e"
+  },
+  {
+    "name": "fuse-3.15.0.tar.xz",
+    "url": "https://github.com/libfuse/libfuse/releases/download/fuse-3.15.0/fuse-3.15.0.tar.xz",
+    "bytes": 4589124,
+    "algorithm": "sha256",
+    "digest": "70589cfd5e1cff7ccd6ac91c86c01be340b227285c5e200baa284e401eea2ca0"
+  },
+  {
+    "name": "squashfuse-0.5.2.tar.gz",
+    "url": "https://github.com/vasi/squashfuse/archive/0.5.2.tar.gz",
+    "bytes": 75404,
+    "algorithm": "sha256",
+    "digest": "db0238c5981dabbd80ee09ae15387f390091668ca060a7bc38047912491443d3"
+  }
+]

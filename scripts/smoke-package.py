@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-10-31: run the same simulation assertions through a final AppImage executable.
 # SPDX-License-Identifier: GPL-2.0-only
 # Created in the personal fork on 2026-10-28: test an installed Studio/SDK through its real HTTP API and disposable projects.
 # Modified in the personal fork on 2026-10-28: isolate test-server ports from existing desktop sessions.
@@ -24,12 +25,19 @@ def utc():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--studio', type=Path, required=True)
-    parser.add_argument('--engine', type=Path, required=True)
+    parser.add_argument('--studio', type=Path)
+    parser.add_argument('--engine', type=Path)
+    parser.add_argument('--appimage', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--python', type=Path)
     args = parser.parse_args()
-    studio, engine, output = (p.resolve() for p in (args.studio, args.engine, args.output))
+    if args.appimage and (args.studio or args.engine or args.python):
+        parser.error('Use --appimage alone, or the existing --studio/--engine mode')
+    if not args.appimage and not (args.studio and args.engine):
+        parser.error('Supply --appimage or both --studio and --engine')
+    studio = args.studio.resolve() if args.studio else None
+    engine = args.engine.resolve() if args.engine else None
+    output = args.output.resolve()
     if output.exists() and any(output.iterdir()):
         parser.error('Choose a new output directory')
     output.mkdir(parents=True, exist_ok=True)
@@ -59,8 +67,12 @@ def main():
                 env.update(PYTHONHOME=str(engine / 'python'),
                            LD_LIBRARY_PATH=str(engine / 'python/lib'),
                            DYLD_LIBRARY_PATH=str(engine / 'python/lib'))
-            command = [str(args.python or sys.executable), str(studio / 'portable.py'), '--server',
-                       '--engine', str(engine), '--data', str(data), '--port', '0']
+            if args.appimage:
+                command = [str(args.appimage.resolve()), '--appimage-extract-and-run', '--server',
+                           '--data', str(data), '--port', '0']
+            else:
+                command = [str(args.python or sys.executable), str(studio / 'portable.py'), '--server',
+                           '--engine', str(engine), '--data', str(data), '--port', '0']
             server = subprocess.Popen(command, env=env, cwd=directory, text=True,
                                       stdout=subprocess.PIPE, stderr=log, start_new_session=True)
             try:
