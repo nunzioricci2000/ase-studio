@@ -1,5 +1,6 @@
 #Requires -Version 7
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: confirm the application's real exit dialog before checking launcher shutdown.
 # Created in the personal fork on 2026-11-02: exercise the final AppImage under real WSLg, Start registration and offline removal on a disposable Windows runner.
 param([string]$Image, [string]$Installer, [string]$Output)
 $ErrorActionPreference='Stop'
@@ -75,6 +76,16 @@ try {
     # Close only this disposable account's application, then exercise the actual
     # offline uninstall entrypoint and verify both Windows and Linux cleanup.
     foreach($window in $windows) { $window.CloseMainWindow() | Out-Null }
+    # Normal Studio windows always ask for exit confirmation. Complete that
+    # dialog through the Windows desktop, as a user closing the app would do.
+    $desktop=New-Object -ComObject WScript.Shell
+    $deadline=(Get-Date).AddSeconds(20)
+    do {
+        $confirmed=$desktop.AppActivate('Exit ASE Studio di Nunzio')
+        if($confirmed) { $desktop.SendKeys('%y');break }
+        Start-Sleep -Milliseconds 500
+    } while((Get-Date) -lt $deadline)
+    if(-not $confirmed) { throw 'The Studio exit confirmation dialog did not appear' }
     $deadline=(Get-Date).AddSeconds(30)
     do {
         $running=Get-Process ASEStudioSetup -ErrorAction SilentlyContinue
