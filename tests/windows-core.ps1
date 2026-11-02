@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: allow reinstall over installer-owned helper files after offline removal.
 # Created in the personal fork on 2026-11-01: execute the actual Windows entrypoint with isolated OS boundaries and no network.
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
@@ -60,6 +61,8 @@ Get-WindowsHost | Out-Null
     [IO.File]::WriteAllText($state,'{"Owner":"ASE Studio Windows v1","Distro":"Ubuntu-26.04","LinuxUser":"student"}')
     Run-Core 'uninstall' | Out-Null
     if((Test-Path $state) -or -not (Test-Path (Join-Path $temp 'uninstalled.txt'))) { throw 'Offline uninstall did not use the saved selection' }
+    [IO.File]::WriteAllText((Join-Path $store '.owner'),'ASE Studio Windows v1')
+    [IO.File]::WriteAllText((Join-Path $store 'LICENSE'),'Retained installer-owned file')
     $fixtures=Join-Path $temp 'network-fixtures';New-Item -ItemType Directory $fixtures | Out-Null
     [IO.File]::WriteAllText((Join-Path $fixtures 'release.json'),'{"draft":false,"prerelease":false,"tag_name":"v1.6.2-abate.3"}')
     [IO.File]::WriteAllText((Join-Path $fixtures 'targets.json'),'{"schema_version":3,"version":"v1.6.2-abate.3","release_sequence":3,"targets":[]}')

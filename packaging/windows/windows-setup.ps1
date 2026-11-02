@@ -1,4 +1,6 @@
 #Requires -Version 5.1
+# Modified in the personal fork on 2026-11-02: stage the authenticated download in the selected Linux user's private temporary directory.
+# Modified in the personal fork on 2026-11-02: retain store ownership for reinstall and resolve WSL after prerequisite setup.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-11-02: pass only the RSA element to the .NET Framework XML key parser.
 # Created in the personal fork on 2026-11-01: per-user Windows orchestration with authenticated AppImage bootstrap.
@@ -25,15 +27,22 @@ function Read-State {
     if ($value.Owner -ne 'ASE Studio Windows v1') { throw 'Unrecognized installation state.' }
     return $value
 }
+function Test-OwnedWindowsStore {
+    $marker=Join-Path $store '.owner'
+    return (Test-Path -LiteralPath $marker) -and (Get-Content -Raw -LiteralPath $marker) -ceq 'ASE Studio Windows v1'
+}
 function Install-WindowsFiles {
     New-Item -ItemType Directory -Force -Path $store | Out-Null
+    if (-not (Test-Path -LiteralPath $stateFile) -and -not (Test-Path -LiteralPath (Join-Path $store 'pending.json')) -and
+        -not (Test-OwnedWindowsStore) -and @(Get-ChildItem -LiteralPath $store -Force).Count) { throw 'Unmanaged Windows installation directory.' }
+    [IO.File]::WriteAllText((Join-Path $store '.owner'),'ASE Studio Windows v1')
     $exe = Join-Path $store 'ASEStudioSetup.exe'
     foreach ($file in @('ASEStudioSetup.exe','windows-setup.ps1','install-release.ps1','release-public.xml','LICENSE')) {
         $source = Join-Path $PSScriptRoot $file
         $destination = Join-Path $store $file
         if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($destination)) {
             if (Test-Path -LiteralPath $destination) {
-                if (-not (Test-Path -LiteralPath $stateFile) -and -not (Test-Path -LiteralPath (Join-Path $store 'pending.json'))) { throw 'Unmanaged Windows installation directory.' }
+                if (-not (Test-Path -LiteralPath $stateFile) -and -not (Test-Path -LiteralPath (Join-Path $store 'pending.json')) -and -not (Test-OwnedWindowsStore)) { throw 'Unmanaged Windows installation directory.' }
             }
             if ((Test-Path -LiteralPath $destination) -and (Get-FileHash -LiteralPath $source).Hash -eq (Get-FileHash -LiteralPath $destination).Hash) { continue }
             Copy-Item -LiteralPath $source -Destination $destination -Force
@@ -61,6 +70,7 @@ function Register-Studio {
 if (Test-Path -LiteralPath $stateFile) { Read-State | Out-Null }
 if ($Action -in @('install','prerequisites') -and (Test-Path -LiteralPath $store) -and
     -not (Test-Path -LiteralPath $stateFile) -and -not (Test-Path -LiteralPath (Join-Path $store 'pending.json')) -and
+    -not (Test-OwnedWindowsStore) -and
     @(Get-ChildItem -LiteralPath $store -Force).Count) { throw 'The installation folder contains unmanaged files. Choose recovery before proceeding.' }
 trap [OperationCanceledException] { Write-Output 'Operation cancelled before installation.'; exit 2 }
 Get-WindowsHost | Out-Null
@@ -77,6 +87,7 @@ if ($Action -eq 'prerequisites') {
         exit
     }
     # Register the distro under the invoking user, never under alternate UAC credentials.
+    $wslExecutable = Get-WslExecutable
     $names = @((Wsl-Output --list --quiet) -split "`r?`n" | ForEach-Object { $_.Trim() })
     if ('Ubuntu-24.04' -cnotin $names) { Wsl --install --distribution Ubuntu-24.04 --no-launch }
     Write-Output 'WSL prerequisites prepared. Complete the Ubuntu account and check distributions again.'
@@ -136,6 +147,7 @@ $LinuxUser = Wsl-Output @selection --exec id -un
 $selection = @('-d', $Distro, '-u', $LinuxUser)
 $work = Join-Path ([IO.Path]::GetTempPath()) ('ase-windows-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work | Out-Null
+$linuxWork = $null
 try {
     if ($Version -ne 'latest' -and $Version -cnotmatch '^v\d+\.\d+\.\d+-[a-z]+\.[1-9][0-9]*$') { throw 'Invalid release version.' }
     $suffix = if ($Version -eq 'latest') { 'latest' } else { 'tags/' + $Version }
@@ -167,6 +179,14 @@ try {
     Download ($base + $record.name) $image
     if ((Get-Item -LiteralPath $image).Length -ne $record.bytes -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $record.sha256) { throw 'AppImage integrity verification failed.' }
     $linuxImage = Wsl-Output @selection --exec wslpath -u ($image.Replace('\','/'))
+    # Windows drives can belong to a different default Linux uid and can deny
+    # chmod. Execute a private Linux copy owned by the selected account instead.
+    $directory = Wsl-Output @selection --exec mktemp -d -t ase-windows-XXXXXXXX
+    if ($directory -notmatch '^/[^\r\n]+/ase-windows-[A-Za-z0-9]+$') { throw 'Cannot allocate a private Linux staging directory.' }
+    $linuxWork = $directory
+    $stagedImage = "$linuxWork/runtime.AppImage"
+    Wsl @selection --exec cp -- $linuxImage $stagedImage
+    $linuxImage = $stagedImage
     Wsl @selection --exec chmod u+x $linuxImage
     # Repair also restores a missing current link; ownership checks remain in the
     # shared install command and prevent taking over unrelated files.
@@ -181,4 +201,10 @@ try {
     Remove-Item -LiteralPath (Join-Path $store 'pending.json') -ErrorAction SilentlyContinue
     Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' ASEStudioResume -ErrorAction SilentlyContinue
     Write-Output 'Installation complete. Open ASE Studio from Start.'
-} finally { Remove-Item -LiteralPath $work -Recurse -Force }
+} finally {
+    if ($linuxWork) {
+        try { Wsl @selection --exec rm -rf -- $linuxWork }
+        catch { Write-Warning 'Could not remove the temporary Linux download directory.' }
+    }
+    Remove-Item -LiteralPath $work -Recurse -Force
+}

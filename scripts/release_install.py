@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in the personal fork on 2026-11-02: preserve already-executable AppImage permissions on shared Windows mounts.
 # Modified in the personal fork on 2026-11-01: support authenticated managed AppImage installations across compatible distributions.
 # Modified in the personal fork on 2026-10-31: select the Arch runtime for ID_LIKE derivatives while retaining dependency and activation checks.
 # Modified in the personal fork on 2026-10-30: preserve automatic updates when PowerShell resolves latest to a concrete tag.
@@ -340,7 +341,8 @@ def extract_runtime(archive, destination, target):
     if target == APPIMAGE_TARGET:
         # Caller must authenticate this executable through release_download first.
         destination.mkdir(parents=True)
-        archive.chmod(0o755)
+        if not os.access(archive, os.X_OK):
+            archive.chmod(0o755)
         run([archive.resolve(), '--appimage-extract'], cwd=destination, stdout=subprocess.DEVNULL, timeout=180)
         payload = destination / 'squashfs-root'
         if not (payload / 'AppRun').is_file() or not (payload / 'manifest.json').is_file():
