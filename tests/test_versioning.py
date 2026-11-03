@@ -1,3 +1,5 @@
+# Modified in the personal fork on 2026-11-03: verify Beacon revision 1 and distribution sequence 5.
+# Modified in the personal fork on 2026-11-02: track integrated upstream 1.6.4 without changing fork metadata.
 # Modified in the personal fork on 2026-11-02: assert Abate 4 release identity and sequence.
 # Modified in the personal fork on 2026-10-31: assert Abate 3 release identity and sequence.
 # Modified in the personal fork on 2026-10-30: cover signed Abate update metadata and runtime dependencies.
@@ -16,14 +18,14 @@ from versioning import parse_release_tag, read_version
 
 
 class VersioningTests(unittest.TestCase):
-    def test_abate_tracks_the_integrated_upstream_version(self):
+    def test_beacon_tracks_the_integrated_upstream_version(self):
         identity = read_version(ROOT)
-        self.assertEqual(identity['upstream_version'], '1.6.2')
-        self.assertEqual(identity['display_version'], '1.6.2 · Abate')
-        self.assertEqual(identity['release_tag'], 'v1.6.2-abate.4')
-        self.assertEqual(identity['release_sequence'], 4)
+        self.assertEqual(identity['upstream_version'], '1.6.4')
+        self.assertEqual(identity['display_version'], '1.6.4 · Beacon')
+        self.assertEqual(identity['release_tag'], 'v1.6.4-beacon.1')
+        self.assertEqual(identity['release_sequence'], 5)
         self.assertEqual(parse_release_tag(identity['release_tag']), {
-            'upstream_version': '1.6.2', 'codename': 'abate', 'fork_revision': 4})
+            'upstream_version': '1.6.4', 'codename': 'beacon', 'fork_revision': 1})
 
     def test_fork_fixes_upstream_updates_and_feature_packages_are_independent(self):
         with tempfile.TemporaryDirectory() as directory:

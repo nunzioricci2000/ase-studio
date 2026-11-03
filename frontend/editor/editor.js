@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// Modified in the personal fork on 2026-11-02: expose docking lifecycle and accept an owned status element.
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/editor/browser/coreCommands.js';
 import 'monaco-editor/editor/contrib/clipboard/browser/clipboard.js';
@@ -28,7 +29,7 @@ self.MonacoEnvironment = {
 registerRiscv(monaco);
 registerStudioThemes(monaco);
 
-export function createSourceEditor(container, {onChange, onSave}) {
+export function createSourceEditor(container, {onChange, onSave, statusElement = container.parentElement.querySelector("#editor-status")}) {
   const editor = monaco.editor.create(container, {
     theme:document.documentElement.dataset.theme === 'dark' ? 'ase-dark' : 'ase-light',
     model:null, automaticLayout:true, minimap:{enabled:false}, wordWrap:'off',
@@ -41,7 +42,7 @@ export function createSourceEditor(container, {onChange, onSave}) {
   });
   const protectedDecoration = editor.createDecorationsCollection();
   const pipelineDecoration = editor.createDecorationsCollection();
-  const status = document.querySelector('#editor-status');
+  const status = statusElement || document.createElement('div');
   let model = null;
   let listener = null;
   let selectedLine = null;
@@ -119,6 +120,11 @@ export function createSourceEditor(container, {onChange, onSave}) {
       editor.revealPositionInCenter(position);
       editor.focus();
     },
+    focus() { editor.focus(); },
+    layout() { editor.layout(); },
+    viewState() { return editor.saveViewState(); },
+    modelIdentity() { return model?.uri.toString() || null; },
+    setStatus(message) { status.textContent = message; },
     setFontSize(size) { editor.updateOptions({fontSize:size,lineHeight:Math.round(size*1.65)}); },
     setTheme(dark) { monaco.editor.setTheme(dark ? 'ase-dark' : 'ase-light'); },
     find() { editor.focus(); editor.getAction('actions.find').run(); },

@@ -58,7 +58,8 @@ try {
  assert.ok(await page.locator('#predictor-fields input').count()>0);
  await page.locator('#cancel-predictor').click();
  await page.locator('#cancel-config').click();
- await page.locator('[data-tab=memory]').click();
+ // Modified in the personal fork on 2026-11-02: activate the Lumino memory tab.
+ await page.locator('.lm-TabBar-tabLabel').getByText('Memory',{exact:true}).click();
  const popupPromise=page.waitForEvent('popup');
  await page.locator('#memory-popout').click();
  const popup=await popupPromise;

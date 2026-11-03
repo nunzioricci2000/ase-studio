@@ -3,6 +3,7 @@
 # Modified in the personal fork on 2026-10-30: bundle source-paired private macOS engine libraries before signing.
 # Modified in the personal fork on 2026-10-30: integrate signed managed updates and supervised activation.
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: ship the generated Studio bundle instead of its module entry point.
 # Modified in the personal fork on 2026-10-30: package independent upstream and Abate release metadata.
 # Modified in the personal fork on 2026-10-30: separate minimal runtime from sources and validate installed final archives with external tests.
 # Modified in the personal fork on 2026-10-30: exclude assistant instructions and configuration from application and source exports.
@@ -149,7 +150,7 @@ RUNTIME_FILES = {
     'appimage_runtime.py', 'portable.py', 'backend.py', 'native.py', 'VERSION', 'VERSION.license',
     'FORK.json', 'FORK.json.license', 'versioning.py', 'LICENSE', 'THIRD_PARTY.md',
     'scripts/portable-demo.mk', 'frontend/index.html', 'frontend/studio.css',
-    'frontend/studio.js', 'frontend/riscv-opcodes.js', 'frontend/memory-window.js',
+    'frontend/riscv-opcodes.js', 'frontend/memory-window.js',
     'frontend/memory-window.html', 'frontend/memory-window.css',
 }
 

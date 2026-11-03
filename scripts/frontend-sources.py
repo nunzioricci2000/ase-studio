@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: collect every pinned Lumino npm input and preferred sources.
 # Created in the personal fork on 2026-10-28: collect and verify exact frontend inputs and preferred editable sources.
 """Prepare dependency sources for redistribution; no binaries are compiled."""
 import argparse
@@ -38,6 +39,16 @@ def entries(root=ROOT):
         records.append(dict(name=f'{name}-npm-input.tgz', url=package['resolved'],
                             sha512=base64.b64decode(integrity, validate=True).hex(),
                             required=['package.json', 'LICENSE']))
+    for name, expected in lock.get('lumino_versions', {}).items():
+        package = npm['node_modules/@lumino/' + name]
+        if package['version'] != expected:
+            raise ValueError(f'Review Lumino preferred sources for {name}')
+        algorithm, integrity = package['integrity'].split('-', 1)
+        if algorithm != 'sha512':
+            raise ValueError('Unsupported Lumino npm integrity')
+        records.append(dict(name=f'lumino-{name}-npm-input.tgz', url=package['resolved'],
+                            sha512=base64.b64decode(integrity, validate=True).hex(),
+                            required=['package.json', 'src/index.ts']))
     for record in records:
         if Path(record['name']).name != record['name'] or not record['url'].startswith('https://'):
             raise ValueError('Invalid dependency source entry')
@@ -78,6 +89,14 @@ def verify(directory, root=ROOT):
     marked = archive_file(directory / 'monaco-editor-npm-input.tgz', 'esm/vs/base/common/marked/marked.js')
     if b'marked v14.0.0' not in marked[:200]:
         raise ValueError('Review the preferred source version of embedded Marked')
+    for name, expected in lock.get('lumino_versions', {}).items():
+        preferred = json.loads(archive_file(directory / 'lumino-preferred-source.tar.gz',
+                               f'packages/{name}/package.json'))
+        installed = json.loads(archive_file(directory / f'lumino-{name}-npm-input.tgz', 'package.json'))
+        if preferred['version'] != expected or installed['version'] != expected:
+            raise ValueError(f'Lumino package/source version mismatch: {name}')
+        if preferred.get('license') != 'BSD-3-Clause' or installed.get('license') != 'BSD-3-Clause':
+            raise ValueError(f'Review changed Lumino license: {name}')
     return result
 
 
