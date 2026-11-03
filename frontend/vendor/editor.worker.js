@@ -1,3 +1,4 @@
+/*! ASE Studio build: modified in the personal fork on 2026-11-02. Application sources are GPL-2.0-only; dependencies retain their own licenses. See THIRD_PARTY.md and the bundled license notices. */
 var $n=class{constructor(){this.listeners=[],this.unexpectedErrorHandler=function(e){setTimeout(()=>{throw e.stack?wt.isErrorNoTelemetry(e)?new wt(e.message+`
 
 `+e.stack):new Error(e.message+`

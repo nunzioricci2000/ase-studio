@@ -1,12 +1,16 @@
+// Modified in the personal fork on 2026-11-02: serve docking checks to Chromium and native WebKit harnesses.
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {resolve, extname} from 'node:path';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
-const bundle = await build({entryPoints:['tests/harness.js'],bundle:true,write:false,outdir:'/tmp/ase-editor-test',format:'esm',target:'es2022',loader:{'.ttf':'dataurl'},plugins:[{name:'sanitizer',setup(b){b.onResolve({filter:/dompurify\/dompurify\.js$/},()=>({path:resolve('node_modules/dompurify/dist/purify.es.mjs')}));}}]});
+const bundle = await build({entryPoints:[process.env.ASE_WORKBENCH_HARNESS ? 'tests/workbench-native.js' : 'tests/harness.js'],bundle:true,write:false,outdir:'/tmp/ase-editor-test',format:'esm',target:'es2022',loader:{'.ttf':'dataurl'},plugins:[{name:'sanitizer',setup(b){b.onResolve({filter:/dompurify\/dompurify\.js$/},()=>({path:resolve('node_modules/dompurify/dist/purify.es.mjs')}));}}]});
 const script = bundle.outputFiles.find(f=>f.path.endsWith('.js')).contents;
-const fixture = '<!doctype html><html><head><link rel="stylesheet" href="/vendor/editor.css"><link rel="stylesheet" href="/studio.css"></head><body style="display:block"><div id="source-editor" style="width:900px;height:650px"></div><div id="editor-status" role="status"></div><script type="module" src="/vendor/harness.js"></script></body></html>';
+const editorFixture = '<!doctype html><html><head><link rel="stylesheet" href="/vendor/editor.css"><link rel="stylesheet" href="/studio.css"></head><body style="display:block"><div id="source-editor" style="width:900px;height:650px"></div><div id="editor-status" role="status"></div><script type="module" src="/vendor/harness.js"></script></body></html>';
+const fixture = process.env.ASE_WORKBENCH_HARNESS
+  ? (await readFile('frontend/index.html','utf8')).replace('src="vendor/studio.js"','src="/vendor/harness.js"')
+  : editorFixture;
 const server = createServer(async(req,res)=>{
   try {
     const path = new URL(req.url,'http://localhost').pathname;
@@ -34,6 +38,7 @@ else {
     const checks=await page.evaluate(()=>window.runEditorTests());
     assert.deepEqual(errors,[]);
     for (const check of checks) console.log(`PASS ${check}`);
+    if (!process.env.ASE_WORKBENCH_HARNESS) {
     // Check the rendered completion and hover widgets using actual editor commands.
     await page.evaluate(()=>{
       const {monaco}=window.harness;
@@ -52,5 +57,6 @@ else {
     await page.waitForSelector('.monaco-hover');
     assert.ok((await page.locator('.monaco-hover').innerText()).includes('immediate'));
     console.log('PASS rendered RISC-V completion and hover');
+    }
   } finally {await browser?.close();server.close();}
 }

@@ -5,17 +5,20 @@
 import {build} from 'esbuild';
 import {resolve} from 'node:path';
 import {mkdir, copyFile, rm, writeFile} from 'node:fs/promises';
+// Modified in the personal fork on 2026-11-02: bundle the Lumino application and its local styles.
 const outdir = 'frontend/vendor';
 await rm(outdir, {recursive: true, force: true});
 await mkdir(outdir, {recursive: true});
 // Monaco also vendors DOMPurify; overriding npm alone does not replace that copy.
 const sanitizerPlugin = {name:'patched-dompurify', setup(builder) {
+  builder.onResolve({filter:/^\.\/vendor\/editor\.js$/}, () => ({path:'./editor.js', external:true}));
   builder.onResolve({filter:/dompurify\/dompurify\.js$/}, () => ({path:resolve('node_modules/dompurify/dist/purify.es.mjs')}));
 }};
 const result = await build({
   plugins:[sanitizerPlugin],
-  entryPoints: {'editor': 'frontend/editor/editor.js', 'editor.worker': 'node_modules/monaco-editor/esm/vs/editor/editor.worker.js'},
+  entryPoints: {'studio': 'frontend/studio.js', 'editor': 'frontend/editor/editor.js', 'editor.worker': 'node_modules/monaco-editor/esm/vs/editor/editor.worker.js'},
   outdir, bundle: true, format: 'esm', target: 'es2022', minify: true, metafile: true,
+  banner: {js:'/*! ASE Studio build: modified in the personal fork on 2026-11-02. Application sources are GPL-2.0-only; dependencies retain their own licenses. See THIRD_PARTY.md and the bundled license notices. */', css:'/*! Studio styles include BSD-3-Clause Lumino styles. See LUMINO-LICENSE.txt and corresponding sources. */'},
   loader: {'.ttf': 'file'}, assetNames: '[name]-[hash]', legalComments: 'linked',
 });
 if (process.env.ASE_FRONTEND_REPORT) {
@@ -30,3 +33,5 @@ await copyFile('scripts/codicons-font-notice.txt', `${outdir}/CODICONS-NOTICE.tx
 await copyFile('node_modules/dompurify/LICENSE', `${outdir}/DOMPURIFY-LICENSE.txt`);
 
 await copyFile('node_modules/dompurify/LICENSE-MPL', `${outdir}/DOMPURIFY-LICENSE-MPL.txt`);
+
+await copyFile('scripts/lumino-license.txt', `${outdir}/LUMINO-LICENSE.txt`);

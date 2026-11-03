@@ -4,12 +4,13 @@
 const GLib = imports.gi.GLib;
 const filename = GLib.build_filenamev([
   GLib.path_get_dirname(GLib.path_get_dirname(ARGV[0] || imports.system.programPath)),
-  "frontend", "studio.js"
+  "frontend", "views", "pipeline.js"
 ]);
 const [, bytes] = GLib.file_get_contents(filename);
 // Modified in the personal fork on 2026-10-30: allow the fork's static ES-module imports when parsing the shared UI fixture.
 const source = new TextDecoder().decode(bytes).replace(/^import .*?;\s*$/gm, "");
-new Function(source);
+// Modified in the personal fork on 2026-11-02: exercise the extracted pipeline scroll implementation.
+new Function(source.replace(/^export /gm, ''));
 function equal(actual, expected) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);

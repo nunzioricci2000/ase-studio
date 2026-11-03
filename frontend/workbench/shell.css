@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Created in the personal fork on 2026-11-02: apply Studio typography, density and themes to Lumino. */
+body { grid-template-rows: 100px minmax(0, 1fr); }
+#workspace { position:relative; min-height:0; min-width:0; overflow:hidden; }
+#studio-dock { position:absolute; inset:0; }
+.studio-panel { min-width:180px; min-height:120px; overflow:hidden; background:#fff; }
+.studio-panel > :first-child { width:100%; height:100%; }
+#work { min-width:260px; }
+#register-panel { display:block; }
+.lm-TabBar { min-height:33px; background:var(--bg); border-bottom:1px solid var(--line); font:12px system-ui,sans-serif; }
+.lm-TabBar-content { gap:2px; min-width:0; }
+.lm-TabBar-tab { min-width:60px; max-width:240px; min-height:32px; padding:6px 9px; align-items:center; gap:8px; border-bottom:2px solid transparent; color:var(--muted); background:var(--bg); cursor:grab; }
+.lm-TabBar-tab.lm-mod-current { color:var(--blue); background:#fff; border-bottom-color:var(--blue); font-weight:600; }
+.lm-TabBar-tabLabel { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lm-TabBar-tabCloseIcon { width:16px; height:18px; border-radius:3px; cursor:pointer; text-align:center; }
+.lm-TabBar-tabCloseIcon:before { content:'×'; font:16px/18px system-ui,sans-serif; }
+.lm-TabBar-tabCloseIcon:hover { color:var(--ink); background:var(--line); }
+.lm-DockPanel-handle { background:var(--line); }
+.lm-DockPanel-handle:hover { background:#93b8e5; }
+.lm-DockPanel-overlay { background:#1565c033; border:2px solid var(--blue); pointer-events:none; }
+.lm-Menu { z-index:10000; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px; box-shadow:0 8px 24px #17223535; font:13px system-ui,sans-serif; }
+.lm-Menu-content { padding:0; margin:0; }
+.lm-Menu-item { padding:6px 10px; min-height:29px; }
+.lm-Menu-item.lm-mod-active { background:#e8f1ff; color:#0759b3; }
+.lm-Menu-item.lm-mod-toggled .lm-Menu-itemIcon:before { content:'✓'; }
+.lm-Menu-itemIcon { min-width:20px; }
+.lm-Menu-item[data-type='separator'] { padding:0; height:1px; min-height:1px; background:var(--line); margin:4px; }
+#editor-toolbar { flex-basis:auto; flex-wrap:wrap; gap:5px; }
+.editor-identity { flex-basis:100%; }
+.editor-tools { flex-wrap:wrap; padding-bottom:2px; }
+.header-tools { flex-wrap:wrap; }
+.run-actions { margin-left:auto; }
+.pipeline-controls { display:flex; flex-wrap:wrap; max-height:145px; overflow:auto; gap:6px; }
+.pipeline-status { flex:1 1 250px; }
+.pipeline-sizing { flex-wrap:wrap; }
+.cycle-navigation { flex-wrap:wrap; }
+.memory-watch-controls { flex-wrap:wrap; }
+.studio-panel[data-panel='memory'], .studio-panel[data-panel='pipeline'] { container-type:inline-size; }
+@container (max-width:700px) {
+ .pipeline-workspace { grid-template-columns:minmax(0,1fr); }
+ #pipeline-diagram { display:none; }
+ .memory-workspace { grid-template-columns:minmax(0,1fr); }
+ #memory-map { display:none; }
+ .cycle-jump { margin-left:0; padding-left:0; border-left:0; }
+}
+html[data-theme='dark'] .studio-panel,
+html[data-theme='dark'] .lm-TabBar-tab.lm-mod-current,
+html[data-theme='dark'] .lm-Menu { background:#111827; }
+html[data-theme='dark'] .lm-Menu-item.lm-mod-active { background:#17365f; color:#bfdbfe; }
+.lm-mod-hidden { display:none !important; }

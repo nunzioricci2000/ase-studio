@@ -1,3 +1,4 @@
+<!-- Modified in the personal fork on 2026-11-03: introduce the Beacon feature package and its release identity. -->
 <!-- Modified in the personal fork on 2026-11-02: document the Abate 4 AppImage and unsigned graphical Windows installer release. -->
 <!-- Modified in the personal fork on 2026-10-31: document Abate 3 Windows PowerShell compatibility and recovery. -->
 <!-- Modified in the personal fork on 2026-10-31: identify the Abate 2 installation-compatibility release. -->
@@ -15,7 +16,7 @@ bash install-release.sh install
 ```
 
 Linux/macOS, as your normal user. The command uses the latest stable release;
-it requires the standalone installer assets supplied with Abate.
+it requires the standalone installer assets from a published release.
 [Windows installation, updates, uninstall and recovery](INSTALLATION.md).
 
 <!-- Modified in the personal fork on 2026-10-31: link the experimental self-contained Linux AppImage build. -->
@@ -23,22 +24,26 @@ Abate 4 adds a [graphical Windows installer](https://github.com/nunzioricci2000/
 and a [Linux x86-64 AppImage](APPIMAGE.md). These downloads require the published Abate 4 assets.
 The Windows installer is unsigned: Windows may show an unknown-publisher or SmartScreen warning.
 
-# ASE Studio di Nunzio · Abate
+# ASE Studio di Nunzio · Beacon
 
-**Upstream 1.6.2 · Abate · fork revision 4.** Abate names this fork's first
-feature package: *Monaco → monaco → abate*. The numeric version follows the
-original project; the feature name and fork revision evolve independently.
-See [version naming](VERSIONING.md).
+**Upstream 1.6.4 · Beacon · revision 1.**
+Beacon is the second feature package: *Lumino → light → lighthouse → beacon*.
+It introduces a movable workspace and retains the Monaco editor and desktop
+features from Abate. The numeric version follows the original project;
+the feature name and fork revision evolve independently. See [version naming](VERSIONING.md).
+The installer selects the latest published stable package. Beacon assets become
+available only after the package checks complete and its release is published.
 
 This repository documents the additions and changes maintained in
 [nunzioricci2000/ase-studio](https://github.com/nunzioricci2000/ase-studio).
 For the application overview, standard project/simulation workflow, panels and
 unmodified settings, use the [original ASE Studio documentation](https://github.com/cad-polito-it/ase-studio#readme).
-The [documentation at the integrated upstream revision](https://github.com/cad-polito-it/ase-studio/blob/10f03c8d3b8d331e673dd23d46ca3fcceac502fd/README.md)
+The [documentation at the integrated upstream revision](https://github.com/cad-polito-it/ase-studio/blob/950ee860e8688a68430ca1e5fe07f7ba4dbc510d/README.md)
 provides a reference if upstream subsequently changes.
 
-## What Abate adds
+## What the fork adds
 
+- **Beacon — Lumino workspace:** six movable, resizable, closable panels; the Views menu reopens them or restores the default layout. Closing panels preserves the session and Monaco history. Layout is stored separately from drafts and preferences.
 - **Monaco integration:** the source editor, RISC-V completion/help, protected
   scaffolding and integration with Studio's existing draft recovery, compiler
   diagnostics and pipeline selection. Editor assets are served locally.
@@ -83,3 +88,5 @@ without warranty. See [third-party notices](THIRD_PARTY.md) and
 corresponding sources when distributing built artifacts.
 
 [Scheduled upstream integration proposals](UPSTREAM_SYNC.md).
+
+<!-- Modified in the personal fork on 2026-11-02: document the unpublished 1.6.4 Lumino integration. -->

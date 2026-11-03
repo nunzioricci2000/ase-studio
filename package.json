@@ -8,6 +8,9 @@
     "test:browser": "node tests/browser.mjs"
   },
   "dependencies": {
+    "@lumino/commands": "2.3.4",
+    "@lumino/signaling": "2.1.6",
+    "@lumino/widgets": "2.10.0",
     "monaco-editor": "0.57.0"
   },
   "devDependencies": {

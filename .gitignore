@@ -24,3 +24,16 @@ tests/*
 !tests/update-ui-server.py
 !tests/update-browser.mjs
 !tests/test_macos_runtime.py
+!tests/test_o3_ready_scheduler.py
+
+# Modified in the personal fork on 2026-11-02: retain application and docking regressions.
+!tests/*browser.mjs
+!tests/studio-server.py
+!tests/editor.test.mjs
+!tests/harness.js
+!tests/webkit.py
+!tests/workbench*
+!tests/layout.test.mjs
+!tests/session.test.mjs
+!tests/test_register_playback.py
+!tests/test_taken_jumps.py
