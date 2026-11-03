@@ -1,0 +1,2 @@
+SPDX-License-Identifier: GPL-2.0-only
+Modified in the personal fork on 2026-11-02: integrate upstream 1.6.4 and pin Lumino dependencies and preferred sources.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# Modified in the personal fork on 2026-11-02: run docking controls in Chromium and native WebKit engines.
 # Created in the personal fork on 2026-10-27: timed Studio checks using disposable browser fixtures.
 # Modified in the personal fork on 2026-10-28: retain the exact frontend input graph with timing reports.
 # Modified in the personal fork on 2026-10-28: compile and exercise the native macOS webview on both architectures.
@@ -78,8 +79,10 @@ class Report:
         self.save()
 
 
-def webview(report, name, command):
+def webview(report, name, command, workbench=False):
     env = dict(os.environ, ASE_TEST_SERVE_ONLY='1')
+    if workbench:
+        env['ASE_WORKBENCH_HARNESS'] = '1'
     log = (report.output / 'browser-harness.log').open('w')
     server = subprocess.Popen(['node', 'tests/browser.mjs'], cwd=ROOT, env=env,
                               stdout=subprocess.PIPE, stderr=log, text=True)
@@ -123,10 +126,13 @@ def main():
             if not os.getenv('CHROMIUM_PATH'):
                 report.run('browser-install', ['npx', '--no-install', 'playwright', 'install', 'chromium'])
             report.run('chromium', ['npm', 'run', 'test:browser'], timeout=120)
+            report.run('chromium-docking', ['npm', 'run', 'test:browser'], timeout=120,
+                       env=dict(os.environ, ASE_WORKBENCH_HARNESS='1'))
             report.run('release-update-ui', ['node', 'tests/update-browser.mjs'], timeout=120,
                        env=dict(os.environ, PYTHON=sys.executable))
         else:
             webview(report, 'webkitgtk', ['xvfb-run', '-a', sys.executable, 'tests/webkit.py'])
+            webview(report, 'webkitgtk-docking', ['xvfb-run', '-a', sys.executable, 'tests/webkit.py'], workbench=True)
         if sys.platform == 'darwin':
             # Keep the test executable outside uploaded diagnostics; desktop
             # releases supply the launcher together with its complete sources.
@@ -137,6 +143,8 @@ def main():
                        'scripts/native-macos.swift', '-o', executable])
             webview(report, 'webkit-macos', [executable, '--test-output',
                     str(report.output / 'native-files'), '--test-url'])
+            webview(report, 'webkit-macos-docking', [executable, '--test-output',
+                    str(report.output / 'native-docking-files'), '--test-url'], workbench=True)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         report.finish('failed', error)
         print(error, file=sys.stderr)

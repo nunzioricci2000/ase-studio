@@ -1,6 +1,7 @@
+<!-- Modified in the personal fork on 2026-11-03: document the Beacon release identity and scope. -->
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <!-- Created in the personal fork on 2026-10-30: retain fork-specific editor, checkout and regression workflows without copying the upstream guide. -->
-# Developing Abate
+# Developing Beacon
 
 Use the [upstream documentation](https://github.com/cad-polito-it/ase-studio#readme)
 for unchanged Studio behavior. For this fork's source installation and engine
@@ -90,10 +91,60 @@ Additional native and integration checks:
 The named release identity is shared by `versioning.py`, `VERSION` and
 `FORK.json`; see [VERSIONING.md](VERSIONING.md). The backend keeps the numeric
 `version` API field for compatibility and exposes `displayVersion`, `releaseTag`
-and the fork name/revision separately. The About view displays `1.6.2 · Abate`.
+and the fork name/revision separately. The About view displays `1.6.4 · Beacon`; the release identity is `v1.6.4-beacon.1` (sequence 5).
 
 Packaging tests run external scripts against the installed final archive; those
 tools are not included in the runtime. Release-installer tests cover version
 identity, integrity, rollback, concurrent operations and preservation of data.
 A source archive must include the version module and fork metadata as well as
 all packaging/build recipes. [RELEASES.md](RELEASES.md) describes the CI gates.
+
+<!-- Modified in the personal fork on 2026-11-02: describe Lumino module contracts and regression checks. -->
+
+## Lumino workspace
+
+`frontend/studio.js` coordinates startup. `workbench/shell.js` owns the six single
+widget instances, their docking layout and the always available Views menu.
+Closing a widget detaches it into a hidden parking area; it never disposes the
+Monaco adapter or the project session. `workbench/layout.js` serializes only
+versioned panel IDs, rejecting malformed trees, duplicates and unknown panels.
+The `ase-studio-layout` storage key is independent of drafts and preferences.
+
+`workbench/session.js` owns the active project, trace, cycle/instruction selection,
+logs, diagnostics, watches and operation status. Operations use `session.update`
+with explicit patches; the Lumino signal coalesces a synchronous action before
+notifying views. Monaco alone owns document text, cursor and undo history.
+`application.js` retains the existing application operations, dialogs and API
+calls. The six factories in `views/` receive their own DOM roots, the session
+and explicit application callbacks; they never query another panel's DOM.
+Rendering and virtualization remain the existing implementations. Duplicate
+notifications with unchanged data/geometry reuse the rendered view. Memory
+continues rendering and publishing state even when parked, for the separate
+memory window.
+
+`workbench/commands.js` routes buttons, submissions, project opening, memory
+operations, cycle/value navigation and application shortcuts through a Lumino
+CommandRegistry. Monaco owns its native keys; outer shortcuts ignore Monaco,
+editable fields and dialogs. `scripts/build-editor.mjs` emits the application
+and styles into `frontend/vendor/studio.*`, alongside the editor and worker.
+Runtime exports require only generated modules and local assets; editable modules
+and all dependency sources remain in the corresponding-source archive.
+
+Additional checks:
+
+```bash
+ASE_WORKBENCH_HARNESS=1 npm run test:browser
+node tests/workbench-browser.mjs URL
+```
+
+The second command uses the disposable `studio-server.py` URL and tests actual
+mouse docking, close/reopen, undo/redo, a single save per shortcut, persistence,
+corruption recovery, simulation, hidden views and the separate memory window.
+`workbench-native.js` also runs through the existing Chromium, WebKitGTK and
+macOS native harness paths in `scripts/check.py`. Native tests must be executed
+on their corresponding hosts; Chromium success is not native-WebKit evidence.
+
+The integration base is Abate 4 (`1f98bad4bf366b6386b71bd3a2d2ced8a74b11be`).
+The incorporated upstream `main` is `950ee860e8688a68430ca1e5fe07f7ba4dbc510d`
+(1.6.4). The old textarea wrap patch is superseded by Monaco; the backend scheduler,
+Minor jump reconstruction, credits and upstream tests are integrated. Beacon revision 1 packages this integration without terminal, syscall or MMIO changes.

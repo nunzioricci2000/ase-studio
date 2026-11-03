@@ -144,3 +144,31 @@ all source-archive LICENSE/NOTICE/COPYING files, relocation notice and
 hash manifest in `engine/licenses/macos-runtime`. The matching Studio source
 archive includes exact library sources, original bottles and recipes in
 `sources/dependencies`. Homebrew's BSD-2-Clause license accompanies its recipes.
+
+<!-- Modified in the personal fork on 2026-11-02: inventory and collect the complete pinned Lumino dependency closure. -->
+
+## Lumino workspace
+
+The application bundles the following unmodified Lumino packages, all under
+BSD-3-Clause (compatible with this GPL-2.0-only combination):
+
+| Packages | Exact version |
+| --- | --- |
+| widgets | 2.10.0 |
+| commands | 2.3.4 |
+| signaling, disposable | 2.1.6 |
+| dragdrop | 2.1.9 |
+| coreutils | 2.2.3 |
+| algorithm, collections, domutils, keyboard, messaging, properties, virtualdom | 2.0.5 |
+
+All are from `jupyterlab/lumino` release `v2026.10.8`, commit
+`f1868620d0f364eb8013cd26dc77fe38b2a3da83`. The installed package versions and
+TypeScript source inputs were checked against that revision. Preserve both the
+Project Jupyter and PhosphorJS copyright notices, the complete BSD terms in
+`frontend/vendor/LUMINO-LICENSE.txt`, and all generated `*.LEGAL.txt` files.
+The npm packages omit the root LICENSE; `scripts/lumino-license.txt` preserves
+it verbatim from that exact source archive and the build copies it to vendor.
+The lockfile pins every transitive version and npm SHA512 integrity value.
+`scripts/frontend-sources.py` also collects all 13 exact npm input archives and
+the checksum-pinned complete Lumino repository, including TypeScript, styles,
+license, workspace build recipes and lockfile. No external CDN is required.

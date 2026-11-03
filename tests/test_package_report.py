@@ -1,3 +1,4 @@
+# Modified in the personal fork on 2026-11-03: verify that release indexes preserve the active feature-package name.
 # Modified in the personal fork on 2026-10-30: cover signed Abate update metadata and runtime dependencies.
 # SPDX-License-Identifier: GPL-2.0-only
 # Modified in the personal fork on 2026-10-30: require matching named fork identities in release evidence.
@@ -105,7 +106,7 @@ class PackageReportTests(unittest.TestCase):
         self.assertEqual(index['version'], version)
         self.assertEqual(len(index['targets'][0]['sources']), 2)
         self.assertEqual(index['schema_version'], 3)
-        self.assertEqual(index['fork_name'], 'Abate')
+        self.assertEqual(index['fork_name'], read_version(ROOT)['fork_name'])
         self.assertEqual(index['upstream_version'], (ROOT / 'VERSION').read_text().strip())
         stale = self.aggregate()
         stale['targets'][0]['package']['release']['fork_revision'] += 1
